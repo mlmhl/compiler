@@ -1,7 +1,7 @@
 package interpreter
 
 import (
-	"github.com/mlmhl/compiler/parser"
+	"github.com/mlmhl/compiler/gdync/parser"
 	"github.com/mlmhl/compiler/gdync/interpreter/ast"
 	"github.com/mlmhl/compiler/gdync/interpreter/clog"
 )

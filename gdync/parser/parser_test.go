@@ -3,7 +3,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/mlmhl/compiler/token"
+	"github.com/mlmhl/compiler/gdync/token"
 	"github.com/mlmhl/compiler/common"
 )
 

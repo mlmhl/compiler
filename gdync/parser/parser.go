@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	gerror"github.com/mlmhl/compiler/gdync/errors"
-	"github.com/mlmhl/compiler/parser/regex"
-	"github.com/mlmhl/compiler/token"
+	"github.com/mlmhl/compiler/regex"
+	"github.com/mlmhl/compiler/gdync/token"
 	"strings"
 	"github.com/mlmhl/compiler/common"
 	"github.com/mlmhl/goutil/container"

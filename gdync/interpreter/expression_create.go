@@ -5,7 +5,7 @@ import (
 	gerror "github.com/mlmhl/compiler/gdync/errors"
 	"github.com/mlmhl/compiler/gdync/interpreter/ast"
 	"github.com/mlmhl/compiler/gdync/interpreter/types"
-	"github.com/mlmhl/compiler/token"
+	"github.com/mlmhl/compiler/gdync/token"
 )
 
 //
