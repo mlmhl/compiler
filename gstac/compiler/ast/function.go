@@ -1,10 +1,12 @@
 package ast
 
-import "github.com/mlmhl/compiler/common"
-
+// Use Identifier's location as Parameter's location.
 type Parameter struct {
-	name string
 	typ  Type
+	identifier *Identifier
+}
 
-	location *common.Location
+// Use Expression's location as Argument's location.
+type Argument struct {
+	expression Expression
 }

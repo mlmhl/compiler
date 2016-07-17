@@ -40,7 +40,7 @@ func functionTest(function Function, arguments []types.Value,
 	t.Logf("Passed")
 }
 
-func TestNewPrintfFunction(t *testing.T) {
+func TestPrintfFunction(t *testing.T) {
 	function := NewPrintfFunction()
 	arguments := []types.Value{}
 	arguments = append(arguments, types.NewValue(types.STRING_TYPE, "My name is %s, I am %d years old"))

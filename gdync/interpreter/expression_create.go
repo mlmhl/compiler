@@ -333,6 +333,7 @@ func (interpreter *Interpreter) primaryExpression() ast.Expression {
 	case token.STRING_ID:
 		value, err := ast.NewStringExpression(tok.GetValue().(string))
 		if err != nil {
+			err.SetLocation(tok.GetLocation())
 			logger.CompileError(err)
 		}
 		return value
