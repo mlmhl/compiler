@@ -3,7 +3,7 @@ package ast
 import (
 	"strings"
 
-	"github.com/mlmhl/compiler/gstac/error"
+	"github.com/mlmhl/compiler/gstac/errors"
 )
 
 type Expression interface {
@@ -62,16 +62,16 @@ type StringExpression struct {
 	value string
 }
 
-func NewStringExpression(value string) (*StringExpression, error.Error) {
+func NewStringExpression(value string) (*StringExpression, errors.Error) {
 	value = strings.Trim(value, "\"")
 	buffer := []byte{}
 	for i := 0; i < len(value); i++ {
 		b := value[i]
 		if b == '\\' {
-			if i == len(value) - 1 {
-				return nil, error.NewSyntaxError("Invalid string value: " + value, nil)
+			if i == len(value)-1 {
+				return nil, errors.NewSyntaxError("Invalid string value: "+value, nil)
 			}
-			switch value[i + 1] {
+			switch value[i+1] {
 			case 'n':
 				b = '\n'
 			case 'r':
@@ -81,7 +81,7 @@ func NewStringExpression(value string) (*StringExpression, error.Error) {
 			case '\\':
 				b = '\\'
 			default:
-				return nil, error.NewSyntaxError("Invalid string value: " + value, nil)
+				return nil, errors.NewSyntaxError("Invalid string value: "+value, nil)
 			}
 			i++
 		}
@@ -190,14 +190,65 @@ type LogicalAndExpression struct {
 }
 
 type unaryExpression struct {
-
+	operand Expression
 }
 
 type LogicalNotExpression struct {
+	unaryExpression
 }
 
 type MinusExpression struct {
+	unaryExpression
 }
 
 type IncrementExpression struct {
+	unaryExpression
+}
+
+type DecrementExpression struct {
+	unaryExpression
+}
+
+type FunctionCallExpression struct {
+	identifier *Identifier
+	arguments  []Argument
+}
+
+type IndexExpression struct {
+	array Expression
+	index Expression
+}
+
+// Literal array like int[] a = {1, 2, 3}
+type LiteralArrayExpression struct {
+	expressions []Expression
+}
+
+type castExpression struct {
+	operand Expression
+}
+
+type IntegerToFloatCastExpression struct {
+	castExpression
+}
+
+type FloatToIntegerCastExpression struct {
+	castExpression
+}
+
+type BoolToStringCastExpression struct {
+	castExpression
+}
+
+type IntegerToStringCastExpression struct {
+	castExpression
+}
+
+type FloatToStringCastExpression struct {
+	castExpression
+}
+
+type ArrayCreationExpression struct {
+	typ Type
+	dimensions []Expression
 }

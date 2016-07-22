@@ -6,11 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mlmhl/compiler/regex"
-	"github.com/mlmhl/compiler/gstac/token"
 	"github.com/mlmhl/compiler/common"
-	"github.com/mlmhl/goutil/container"
-	gerror "github.com/mlmhl/compiler/gstac/error"
+	error "github.com/mlmhl/compiler/gstac/errors"
+	"github.com/mlmhl/compiler/gstac/token"
+	"github.com/mlmhl/compiler/regex"
 )
 
 type Parser struct {
@@ -19,9 +18,10 @@ type Parser struct {
 	line       string
 	fileName   string
 	regex      *regex.Regex
-	scanner     *bufio.Scanner
+	scanner    *bufio.Scanner
 
-	tokens *container.Stack
+	cursor int
+	buffer []*token.Token
 }
 
 func NewParser() *Parser {
@@ -31,6 +31,7 @@ func NewParser() *Parser {
 	regex.AddRegexExpression(token.INTEGER_TYPE, token.INTEGER_TYPE_ID)
 	regex.AddRegexExpression(token.FLOAT_TYPE, token.FLOAT_TYPE_ID)
 
+	regex.AddRegexExpression(token.BOOL_TYPE, token.BOOL_TYPE_ID)
 	regex.AddRegexExpression(token.STRING_VALUE, token.STRING_VALUE_ID)
 	regex.AddRegexExpression(token.INTEGER_VALUE, token.INTEGER_VALUE_ID)
 	regex.AddRegexExpression(token.FLOAT_VALUE, token.FLOAT_VALUE_ID)
@@ -73,6 +74,9 @@ func NewParser() *Parser {
 	regex.AddRegexExpression(token.DIV_ASSIGN, token.DIV_ASSIGN_ID)
 	regex.AddRegexExpression(token.MOD_ASSIGN, token.MOD_ASSIGN_ID)
 
+	regex.AddRegexExpression(token.INCREMENT, token.INCREMENT_ID)
+	regex.AddRegexExpression(token.DECREMENT, token.DECREMENT_ID)
+
 	regex.AddRegexExpression(token.FOR, token.FOR_ID)
 	regex.AddRegexExpression(token.WHILE, token.WHILE_ID)
 	regex.AddRegexExpression(token.BREAK, token.BREAK_ID)
@@ -95,36 +99,44 @@ func NewParser() *Parser {
 	regex.Compile()
 
 	return &Parser{
-		regex:      regex,
+		regex: regex,
 	}
 }
 
-func (parser *Parser) Parse(fileName string) gerror.Error {
+func (parser *Parser) Parse(fileName string) error.Error {
 	if file, err := os.Open(fileName); err != nil {
-		return gerror.NewInternalError(err.Error())
+		return error.NewInternalError(err.Error())
 	} else {
 		parser.scanner = bufio.NewScanner(file)
-		parser.fileName  =fileName
+		parser.fileName = fileName
 		parser.line = ""
 		parser.lineNumber = 0
 		parser.position = 0
 
-		parser.tokens = container.NewStack()
+		parser.cursor = -1
+		parser.buffer = []*token.Token{}
 
 		return nil
 	}
 }
 
 // Get next token
-func (parser *Parser) Next() (*token.Token, gerror.Error) {
+func (parser *Parser) Next() (*token.Token, error.Error) {
 	if !parser.HasNext() {
-		return token.NewToken(common.NewLocation(
-			-1, -1, parser.fileName)).SetType(token.FINISHED_ID), nil
+		if len(parser.buffer) > 0 &&
+			parser.buffer[len(parser.buffer)-1].GetType() == token.FINISHED_ID {
+			return parser.buffer[len(parser.buffer)-1], nil
+		}
+
+		tok := token.NewToken(common.NewLocation(
+			-1, -1, parser.fileName)).SetType(token.FINISHED_ID)
+		parser.appendToBuffer(tok)
+		return tok, nil
 	}
 
-	if !parser.tokens.IsEmpty() {
-		tok := parser.tokens.Peek().(*token.Token)
-		parser.tokens.Pop()
+	if parser.cursor < len(parser.buffer)-1 {
+		parser.cursor++
+		tok := parser.buffer[parser.cursor]
 		return tok, nil
 	}
 
@@ -132,7 +144,7 @@ func (parser *Parser) Next() (*token.Token, gerror.Error) {
 		length, types := parser.regex.Match(parser.line[parser.position:])
 		pos := parser.position + length
 		if len(types) == 0 {
-			return nil, gerror.NewSyntaxError("Unsupported syntax",
+			return nil, error.NewSyntaxError("Unsupported syntax",
 				common.NewLocation(parser.lineNumber, parser.position, parser.fileName))
 		} else {
 			if types[0] == token.WHITESPACE_ID {
@@ -152,14 +164,14 @@ func (parser *Parser) Next() (*token.Token, gerror.Error) {
 
 			case token.INTEGER_VALUE_ID:
 				if v, err := strconv.Atoi(value); err != nil {
-					return nil, gerror.NewSyntaxError("Unsupported integer syntax",
+					return nil, error.NewSyntaxError("Unsupported integer syntax",
 						common.NewLocation(parser.lineNumber, parser.position, parser.fileName))
 				} else {
 					tok.SetValue(int64(v))
 				}
 			case token.FLOAT_VALUE_ID:
 				if v, err := strconv.ParseFloat(value, 64); err != nil {
-					return nil, gerror.NewSyntaxError("Unsupported float synatx",
+					return nil, error.NewSyntaxError("Unsupported float synatx",
 						common.NewLocation(parser.lineNumber, parser.position, parser.fileName))
 				} else {
 					tok.SetValue(v)
@@ -178,8 +190,8 @@ func (parser *Parser) Next() (*token.Token, gerror.Error) {
 				tok.SetValue(parser.line[parser.position:pos])
 			}
 
-			// update current position
 			parser.position = pos
+			parser.appendToBuffer(tok)
 
 			return tok, nil
 		}
@@ -187,7 +199,7 @@ func (parser *Parser) Next() (*token.Token, gerror.Error) {
 }
 
 func (parser *Parser) HasNext() bool {
-	if !parser.tokens.IsEmpty() {
+	if parser.cursor < len(parser.buffer)-1 {
 		return true
 	}
 
@@ -211,6 +223,32 @@ func (parser *Parser) HasNext() bool {
 	}
 }
 
-func (parser *Parser) RollBack(tok *token.Token) {
-	parser.tokens.Push(tok)
+func (parser *Parser) GetCursor() int {
+	return parser.cursor
+}
+
+func (parser *Parser) Seek(cursor int) {
+	if cursor < parser.cursor {
+		if cursor < -1 {
+			cursor = -1
+		}
+		parser.cursor = cursor
+	}
+}
+
+func (parser *Parser) RollBack(size int) {
+	parser.cursor -= size
+	if parser.cursor < -1 {
+		parser.cursor = -1
+	}
+}
+
+func (parser *Parser) Commit() {
+	parser.cursor = -1
+	parser.buffer = []*token.Token{}
+}
+
+func (parser *Parser) appendToBuffer(tok *token.Token) {
+	parser.cursor++
+	parser.buffer = append(parser.buffer, tok)
 }

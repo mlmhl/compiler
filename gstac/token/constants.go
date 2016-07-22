@@ -5,8 +5,9 @@ const (
 	ALPHABET = "A|B|C|D|E|F|G|H|I|J|K|L|M|N|O|P|Q|R|S|T|U|V|W|X|Y|Z" +
 	"|" + "a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|q|r|s|t|u|v|w|x|y|z"
 
+	BOOL_TYPE = "(bool)"
 	STRING_TYPE = "(string)"
-	INTEGER_TYPE = "(integer)"
+	INTEGER_TYPE = "(int)"
 	FLOAT_TYPE = "(float)"
 
 	STRING_VALUE = "(\".*\")"
@@ -70,7 +71,7 @@ const (
 
 	WHITESPACE = "(( |\t|\n)+)"
 
-	COMMENT = "(//)"
+	COMMENT = "//"
 
 	IDENTIFIER = "((" + ALPHABET + ")" +
 	"(" + ALPHABET + "|" + NUMBER + "|_" + ")*)"
@@ -80,6 +81,7 @@ const (
 	FINISHED_ID = iota + 1
 	UNKNOWN
 
+	BOOL_TYPE_ID
 	STRING_TYPE_ID
 	INTEGER_TYPE_ID
 	FLOAT_TYPE_ID
@@ -155,6 +157,7 @@ var descriptions map[int]string = map[int]string {
 	INTEGER_TYPE_ID: "integer",
 	FLOAT_TYPE_ID: "float",
 
+	BOOL_TYPE_ID: "bool",
 	STRING_VALUE_ID: "string",
 	INTEGER_VALUE_ID: "integer",
 	FLOAT_VALUE_ID: "float",
