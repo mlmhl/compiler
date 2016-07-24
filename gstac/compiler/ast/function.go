@@ -8,6 +8,13 @@ type Parameter struct {
 	identifier *Identifier
 }
 
+func NewParameter(typ Type, identifier *Identifier) *Parameter {
+	return &Parameter{
+		typ: typ,
+		identifier: identifier,
+	}
+}
+
 func (parameter *Parameter) GetType() Type {
 	return parameter.typ
 }
@@ -18,10 +25,20 @@ type Argument struct {
 }
 
 type Function struct {
-	// use identifier's location as function's location
+	returnType Type
 	identifier *Identifier
-	parameters []Parameter
-	block      *Block
+	parameters []*Parameter
+	block      *FunctionBlock
+}
+
+func NewFunction(typ Type, identifier *Identifier,
+parameters []Parameter, block *FunctionBlock) {
+	return &Function{
+		returnType: typ,
+		identifier: identifier,
+		parameters: parameters,
+		block: block,
+	}
 }
 
 func (function *Function) GetName() string {
@@ -29,5 +46,6 @@ func (function *Function) GetName() string {
 }
 
 func (function *Function) GetLocation() *common.Location {
+	// use identifier's location as function's location
 	return function.identifier.GetLocation()
 }
