@@ -94,6 +94,8 @@ func NewParser() *Parser {
 	regex.AddRegexExpression(token.NULL, token.NULL_ID)
 	regex.AddRegexExpression(token.GLOBAL, token.GLOBAL_ID)
 
+	regex.AddRegexExpression(token.NEW, token.NEW_ID)
+
 	regex.AddRegexExpression(token.WHITESPACE, token.WHITESPACE_ID)
 
 	regex.Compile()

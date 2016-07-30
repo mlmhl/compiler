@@ -3,6 +3,7 @@ package ast
 import "github.com/mlmhl/compiler/common"
 
 type Statement interface {
+	Fix(context *Context)
 	Generate()
 }
 
@@ -36,6 +37,7 @@ func NewForBlock(statementList []Statement) *ForBlock {
 		statements: statementList,
 	}
 }
+
 type WhileBlock struct {
 	statements []Statement
 }
@@ -56,14 +58,6 @@ func NewFunctionBlock(statementList []Statement) *FunctionBlock {
 	}
 }
 
-type ExpressionStatement struct {
-}
-
-type DeclarationStatement struct {
-	// use declaration's location as statement's location
-	declaration *Declaration
-}
-
 //
 // If statement
 //
@@ -72,7 +66,7 @@ type ElifStatement struct {
 	condition Expression
 	block     *IfBlock
 
-	// location for 'elif' keyword
+	// location of `elif` keyword
 	location *common.Location
 }
 
@@ -93,8 +87,15 @@ func (elifStatement *ElifStatement) SetBlock(block *IfBlock) {
 type ElseStatement struct {
 	block *IfBlock
 
-	// location for 'else' keyword
+	// location of `else` keyword
 	location *common.Location
+}
+
+func NewElseStatement(block *IfBlock, location *common.Location) *ElseStatement {
+	return &ElseStatement{
+		block:    block,
+		location: location,
+	}
 }
 
 type IfStatement struct {
@@ -103,7 +104,7 @@ type IfStatement struct {
 	elifStatements []*ElifStatement
 	elseBlock      *ElseStatement
 
-	// location for 'if' keyword
+	// location of `if` keyword
 	location *common.Location
 }
 
@@ -121,21 +122,12 @@ func (ifStatement *IfStatement) SetIfBlock(block *IfBlock) {
 	ifStatement.ifBlock = block
 }
 
-func (ifStatement *IfStatement) SetElifStatements(statements *ElifStatement) {
+func (ifStatement *IfStatement) SetElifStatements(statements []*ElifStatement) {
 	ifStatement.elifStatements = statements
 }
 
 func (ifStatement *IfStatement) SetElseBlock(statement *ElseStatement) {
 	ifStatement.elseBlock = statement
-}
-
-//
-// while statement
-//
-
-type WhileStatement struct {
-	condition *Expression
-	block     *WhileBlock
 }
 
 //
@@ -147,6 +139,80 @@ type ForStatement struct {
 	condition Expression
 	post      Expression
 	block     *ForBlock
+
+	// location of `for` keyword
+	location *common.Location
+}
+
+func NewForStatement(location *common.Location) *ForStatement {
+	return &ForStatement{
+		location: location,
+	}
+}
+
+func (forStatement *ForStatement) SetInit(init Expression) {
+	forStatement.init = init
+}
+
+func (forStatement *ForStatement) SetCondition(condition Expression) {
+	forStatement.condition = condition
+}
+
+func (forStatement *ForStatement) SetPost(post Expression) {
+	forStatement.post = post
+}
+
+func (forStatement *ForStatement) SetBlock(block *ForBlock) {
+	forStatement.block = block
+}
+
+//
+// while statement
+//
+
+type WhileStatement struct {
+	condition Expression
+	block     *WhileBlock
+
+	// location of `while` keyword
+	location *common.Location
+}
+
+func NewWhileStatement(condition Expression, block *WhileBlock,
+	location *common.Location) *WhileStatement {
+	return &WhileStatement{
+		condition: condition,
+		block: block,
+		location: location,
+	}
+}
+
+//
+// continue statement
+//
+
+type ContinueStatement struct {
+	location *common.Location
+}
+
+func NewContinueStatement(location *common.Location) *ContinueStatement {
+	return &ContinueStatement{
+		location: location,
+	}
+}
+
+//
+// break statement
+//
+
+type BreakStatement struct {
+	location *common.Location
+}
+
+func NewBreakStatement(location *common.Location) *BreakStatement {
+	return &BreakStatement{
+		location: location,
+	}
 }
 
 //
@@ -158,18 +224,49 @@ type ReturnStatement struct {
 	location    *common.Location
 }
 
-//
-// break statement
-//
-
-type BreakStatement struct {
-	location *common.Location
+func NewReturnStatement(value Expression, location *common.Location) *ReturnStatement {
+	return &ReturnStatement{
+		returnValue: value,
+		location: location,
+	}
 }
 
 //
-// continue statement
+// declaration statement
 //
 
-type ContinueStatement struct {
-	location *common.Location
+type DeclarationStatement struct {
+	// use declaration's location as statement's location
+	declaration *Declaration
+}
+
+func NewDeclarationStatement(declaration *Declaration) *DeclarationStatement {
+	return &DeclarationStatement{
+		declaration: declaration,
+	}
+}
+
+func (statement *DeclarationStatement) Fix(context *Context) {
+	context.AddVariable(statement.declaration.GetName(), statement.declaration)
+	statement.declaration.Fix(context)
+	statement.declaration.TypeCast()
+}
+
+//
+// raw expression statement
+//
+
+type ExpressionStatement struct {
+	// use expression's location as statement's location
+	expression Expression
+}
+
+func NewExpressionStatement(expression Expression) *ExpressionStatement {
+	return &ExpressionStatement{
+		expression: expression,
+	}
+}
+
+func (statement *ExpressionStatement) Fix(context *Context) {
+	statement.expression.Fix(context)
 }

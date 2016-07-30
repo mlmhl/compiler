@@ -8,6 +8,11 @@ func GetDescription(typ int) string {
 	return descriptions[typ]
 }
 
+func IsAssignOperator(typ int) bool {
+	return typ == ASSIGN_ID || typ == ADD_ASSIGN_ID ||
+		typ == MUL_ASSIGN_ID || typ == DIV_ASSIGN_ID || typ == MOD_ASSIGN_ID
+}
+
 type Token struct {
 	typ      int
 	value    interface{}
@@ -16,8 +21,8 @@ type Token struct {
 
 func NewToken(location *common.Location) *Token {
 	return &Token{
-		typ:   UNKNOWN,
-		value: nil,
+		typ:      UNKNOWN,
+		value:    nil,
 		location: location,
 	}
 }
@@ -47,5 +52,5 @@ func (token *Token) SetValue(value interface{}) *Token {
 // for test
 func (token *Token) Equal(other *Token) bool {
 	return token.typ == other.typ && token.value == other.value &&
-	token.location.Equal(other.location)
+		token.location.Equal(other.location)
 }

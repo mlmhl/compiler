@@ -69,6 +69,8 @@ const (
 	NULL = "(null)"
 	GLOBAL = "(global)"
 
+	NEW = "(new)"
+
 	WHITESPACE = "(( |\t|\n)+)"
 
 	COMMENT = "//"
@@ -145,6 +147,8 @@ const (
 	NULL_ID
 	GLOBAL_ID
 
+	NEW_ID
+
 	WHITESPACE_ID
 
 	IDENTIFIER_ID
@@ -218,6 +222,8 @@ var descriptions map[int]string = map[int]string {
 
 	NULL_ID: "null",
 	GLOBAL_ID: "global",
+
+	NEW_ID: "new",
 
 	WHITESPACE_ID: "white space",
 }

@@ -24,6 +24,12 @@ type Argument struct {
 	expression Expression
 }
 
+func NewArgument(expression Expression) *Argument {
+	return &Argument{
+		expression: expression,
+	}
+}
+
 type Function struct {
 	returnType Type
 	identifier *Identifier
@@ -48,4 +54,7 @@ func (function *Function) GetName() string {
 func (function *Function) GetLocation() *common.Location {
 	// use identifier's location as function's location
 	return function.identifier.GetLocation()
+}
+
+func (function *Function) Fix(context *Context) {
 }

@@ -34,12 +34,17 @@ func (compiler *Compiler) Compile(fileName string) {
 
 // Syntax Analysis
 func (compiler *Compiler) create() {
-
+	compiler.compileUnit()
 }
 
 // Semantic Analysis
 func (compiler *Compiler) fix() {
-
+	for _, statement := range(compiler.statements) {
+		statement.Fix(compiler.globalContext)
+	}
+	for _, function := range(compiler.globalContext.GetFunctionList()) {
+		function.Fix(compiler.globalContext)
+	}
 }
 
 func (compiler *Compiler) generate() {

@@ -97,7 +97,7 @@ type DeriveTag interface {
 }
 
 type FunctionDeriveTag struct {
-	tag string
+	tag       string
 	paramList []Parameter
 }
 
@@ -116,7 +116,7 @@ func NewFunctionDeriveTag(paramList []Parameter) *FunctionDeriveTag {
 	}
 
 	return &FunctionDeriveTag{
-		tag: tag,
+		tag:       tag,
 		paramList: paramList,
 	}
 }
@@ -127,7 +127,7 @@ func (functionDeriveTag *FunctionDeriveTag) GetTag() string {
 
 type ArrayDerive struct{}
 
-func NewArrayderive() *ArrayDerive {
+func NewArrayDerive() *ArrayDerive {
 	return &ArrayDerive{}
 }
 
@@ -136,19 +136,19 @@ func (arrayDerive *ArrayDerive) GetTag() string {
 }
 
 type DeriveType struct {
-	name string
-	base      Type
+	name       string
+	base       Type
 	deriveTags []DeriveTag
 }
 
 func NewDeriveType(base Type, deriveTags []DeriveTag) *DeriveType {
-	name := base.GetName();
-	for _, tag := range(deriveTags) {
+	name := base.GetName()
+	for _, tag := range deriveTags {
 		name = append(name, []byte(tag.GetTag()))
 	}
 	return &DeriveType{
-		name: name,
-		base: base,
+		name:       name,
+		base:       base,
 		deriveTags: deriveTags,
 	}
 }
@@ -157,18 +157,35 @@ func (deriveType *DeriveType) GetName() string {
 	return deriveType.name
 }
 
-//
-// Use identifier's location as Declaration's location.
-//
 type Declaration struct {
 	typ         Type
 	identifier  *Identifier
 	initializer Expression
 
-	// location for type keyword
-	location *common.Location
+	// Use identifier's location as Declaration's location.
+}
+
+func NewDeclaration(typ Type, identifier *Identifier, initializer Expression,
+	location *common.Location) *Declaration {
+	return &Declaration{
+		typ: typ,
+		identifier: identifier,
+		initializer: initializer,
+	}
+}
+
+func (declaration *Declaration) GetName() string {
+	return declaration.identifier.GetName()
 }
 
 func (declaration *Declaration) GetLocation() *common.Location {
-	return declaration.location
+	return declaration.identifier.GetLocation()
+}
+
+func (declaration *Declaration) Fix(context *Context) {
+	declaration.initializer.Fix(context)
+}
+
+func (declaration *Declaration) TypeCast() {
+	declaration.initializer.TypeCast(declaration.typ)
 }

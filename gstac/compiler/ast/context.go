@@ -39,7 +39,7 @@ func (symbolList *SymbolList) Contains(symbol string) bool {
 //
 
 type Context struct {
-	symbolList SymbolList
+	symbolList *SymbolList
 	variables  *container.Trie
 	functions  *container.Trie
 	outContext *Context
@@ -55,6 +55,14 @@ func NewContext(symbolList *SymbolList, outContext *Context) *Context {
 		functions:  nil,
 		outContext: outContext,
 	}
+}
+
+func (context *Context) GetFunctionList() []*Function {
+	functions := []*Function{}
+	for iterator := context.functions.Iterator(); ; iterator.HasNext() {
+		functions = append(functions, iterator.Next().(*Function))
+	}
+	return functions
 }
 
 func (context *Context) AddVariable(name string, declaration *Declaration) errors.Error {
