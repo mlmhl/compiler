@@ -58,6 +58,14 @@ const (
 
 type Type interface {
 	GetName() string
+
+	isPriorityOf(other Type) bool
+
+	isPriorityOfNull() bool
+	isPriorityOfBool() bool
+	isPriorityOfInteger() bool
+	isPriorityOfFloat() bool
+	isPriorityOfString() bool
 }
 
 type baseType struct {
@@ -68,24 +76,112 @@ func (typ *baseType) GetName() string {
 	return typ.name
 }
 
+func (typ *baseType) isPriorityOfNull() bool {
+	return true
+}
+
+func (typ *baseType) isPriorityOfString() bool {
+	return false
+}
+
 type integerType struct {
 	baseType
+}
+
+func (typ *integerType) isPriorityOf(other Type) bool {
+	return other.isPriorityOfInteger()
+}
+
+func (typ *integerType) isPriorityOfBool() bool {
+	return true
+}
+
+func (typ *integerType) isPriorityOfInteger() bool {
+	return false
+}
+
+func (typ *integerType) ifPriorityOfFloat() bool {
+	return false
 }
 
 type floatType struct {
 	baseType
 }
 
+func (typ *floatType) isPriorityOf(other Type) bool {
+	return other.isPriorityOfFloat()
+}
+
+func (typ *floatType) isPriorityOfBool() bool {
+	return true
+}
+
+func (typ *floatType) isPriorityOfInteger() bool {
+	return true
+}
+
+func (typ *floatType) ifPriorityOfFloat() bool {
+	return false
+}
+
 type stringType struct {
 	baseType
+}
+
+func (typ *stringType) isPriorityOf(other Type) bool {
+	return other.isPriorityOfString()
+}
+
+func (typ *stringType) isPriorityOfBool() bool {
+	return true
+}
+
+func (typ *stringType) isPriorityOfInteger() bool {
+	return true
+}
+
+func (typ *stringType) ifPriorityOfFloat() bool {
+	return true
 }
 
 type boolType struct {
 	baseType
 }
 
+func (typ *boolType) isPriorityOf(other Type) bool {
+	return other.isPriorityOfBool()
+}
+
+func (typ *boolType) isPriorityOfBool() bool {
+	return false
+}
+
+func (typ *boolType) isPriorityOfInteger() bool {
+	return false
+}
+
+func (typ *boolType) ifPriorityOfFloat() bool {
+	return false
+}
+
 type nullType struct {
 	baseType
+}
+
+func (typ *nullType) isPriorityOf(other Type) bool {
+	return other.isPriorityOfNull()
+}
+
+func (typ *nullType) isPriorityOfBool() bool {
+	return false
+}
+
+func (typ *nullType) isPriorityOfInteger() bool {
+	return false
+}
+
+func (typ *nullType) ifPriorityOfFloat() bool {
+	return false
 }
 
 //
@@ -157,6 +253,30 @@ func (deriveType *DeriveType) GetName() string {
 	return deriveType.name
 }
 
+func (deriveType *DeriveType) isPriorityOf(typ Type) {
+	panic("Can't invoke `isPriorityOf` on DeriveType")
+}
+
+func (deriveType *DeriveType) isPriorityOfNull() {
+	panic("Can't invoke `isPriorityOfNull` on DeriveType")
+}
+
+func (deriveType *DeriveType) isPriorityOfBool() {
+	panic("Can't invoke `isPriorityOfBool` on DeriveType")
+}
+
+func (deriveType *DeriveType) isPriorityOfInteger() {
+	panic("Can't invoke `isPriorityOfInteger` on DeriveType")
+}
+
+func (deriveType *DeriveType) isPriorityOfFloat() {
+	panic("Can't invoke `isPriorityOfFloat` on DeriveType")
+}
+
+func (deriveType *DeriveType) isPriorityOfString() {
+	panic("Can't invoke `isPriorityOfString` on DeriveType")
+}
+
 type Declaration struct {
 	typ         Type
 	identifier  *Identifier
@@ -184,8 +304,5 @@ func (declaration *Declaration) GetLocation() *common.Location {
 
 func (declaration *Declaration) Fix(context *Context) {
 	declaration.initializer.Fix(context)
-}
-
-func (declaration *Declaration) TypeCast() {
-	declaration.initializer.TypeCast(declaration.typ)
+	declaration.initializer.CastTo(declaration.typ)
 }

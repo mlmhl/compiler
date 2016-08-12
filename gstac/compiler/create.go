@@ -834,17 +834,17 @@ func (compiler *Compiler) primaryExpressionWithoutArrayCreation(first *token.Tok
 	case token.LSP_ID:
 		return compiler.subExpression(first)
 	case token.NULL_ID:
-		return ast.NewNullExpression()
+		return ast.NewNullExpression(first.GetLocation())
 	case token.TRUE_ID:
-		return ast.NewBoolExpression(true)
+		return ast.NewBoolExpression(true, first.GetLocation())
 	case token.FALSE_ID:
-		return ast.NewBoolExpression(false)
+		return ast.NewBoolExpression(false, first.GetLocation())
 	case token.INTEGER_VALUE_ID:
-		return ast.NewIntegerExpression(first.GetValue().(int64))
+		return ast.NewIntegerExpression(first.GetValue().(int64), first.GetLocation())
 	case token.FLOAT_VALUE_ID:
-		return ast.NewFloatExpression(first.GetValue().(float64))
+		return ast.NewFloatExpression(first.GetValue().(float64), first.GetLocation())
 	case token.STRING_VALUE_ID:
-		return ast.NewStringExpression(first.GetValue().(string))
+		return ast.NewStringExpression(first.GetValue().(string), first.GetLocation())
 	case token.LLP_ID:
 		return compiler.arrayLiteralExpression(first)
 	}
@@ -908,7 +908,7 @@ func (compiler *Compiler) arrayLiteralExpression(
 		}
 	}
 
-	return ast.NewArrayLiteralExpression(values)
+	return ast.NewArrayLiteralExpression(values, leftParentheses.GetLocation())
 }
 
 func (compiler *Compiler) argumentList(leftParentheses *token.Token) []*ast.Argument {

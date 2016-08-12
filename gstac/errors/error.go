@@ -2,7 +2,9 @@ package errors
 
 import (
 	"fmt"
+
 	"github.com/mlmhl/compiler/common"
+	"github.com/mlmhl/compiler/gstac/compiler/ast"
 )
 
 type Error interface {
@@ -127,6 +129,32 @@ func NewParenthesesNotMatchedError(leftDesc, rightDesc string,
 			message: fmt.Sprintf("Can't find %s to match %s at %s, %d, %d", rightDesc,
 			leftDesc, leftLoc.GetFileName(), leftLoc.GetLine(), leftLoc.GetPosition()),
 			location: rightLoc,
+		},
+	}
+}
+
+type TypeCastError struct {
+	baseError
+}
+
+func NewTypeCastError(srcType, destType ast.Type, location *common.Location) *TypeCastError {
+	return &TypeCastError{
+		baseError: baseError{
+			message: fmt.Sprintf("can't cast %s to %s", srcType.GetName(), destType.GetName()),
+			location, location,
+		},
+	}
+}
+
+type InvalidOperationError struct {
+	baseError
+}
+
+func NewInvalidOperationError(op string, location *common.Location, types ...string) *InvalidOperationError {
+	return &InvalidOperationError{
+		baseError: baseError{
+			message: fmt.Sprintf("Can't invoke %s operation on %v", op, types),
+			location: location,
 		},
 	}
 }
