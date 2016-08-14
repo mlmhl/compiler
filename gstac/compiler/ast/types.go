@@ -58,6 +58,9 @@ const (
 
 type Type interface {
 	GetName() string
+	GetBaseType() Type
+	Equal(other Type) bool
+	IsDeriveType() bool
 
 	isPriorityOf(other Type) bool
 
@@ -76,6 +79,14 @@ func (typ *baseType) GetName() string {
 	return typ.name
 }
 
+func (typ *baseType) Equal(other Type) bool {
+	return typ.name == other.GetName()
+}
+
+func (typ *baseType) IsDeriveType() bool {
+	return false
+}
+
 func (typ *baseType) isPriorityOfNull() bool {
 	return true
 }
@@ -86,6 +97,10 @@ func (typ *baseType) isPriorityOfString() bool {
 
 type integerType struct {
 	baseType
+}
+
+func (typ *integerType) GetBaseType() Type {
+	return typ
 }
 
 func (typ *integerType) isPriorityOf(other Type) bool {
@@ -108,6 +123,10 @@ type floatType struct {
 	baseType
 }
 
+func (typ *floatType) GetBaseType() Type {
+	return typ
+}
+
 func (typ *floatType) isPriorityOf(other Type) bool {
 	return other.isPriorityOfFloat()
 }
@@ -126,6 +145,10 @@ func (typ *floatType) ifPriorityOfFloat() bool {
 
 type stringType struct {
 	baseType
+}
+
+func (typ *stringType) GetBaseType() Type {
+	return typ
 }
 
 func (typ *stringType) isPriorityOf(other Type) bool {
@@ -148,6 +171,10 @@ type boolType struct {
 	baseType
 }
 
+func (typ *boolType) GetBaseType() Type {
+	return typ
+}
+
 func (typ *boolType) isPriorityOf(other Type) bool {
 	return other.isPriorityOfBool()
 }
@@ -166,6 +193,10 @@ func (typ *boolType) ifPriorityOfFloat() bool {
 
 type nullType struct {
 	baseType
+}
+
+func (typ *nullType) GetBaseType() Type {
+	return typ
 }
 
 func (typ *nullType) isPriorityOf(other Type) bool {
@@ -232,7 +263,7 @@ func (arrayDerive *ArrayDerive) GetTag() string {
 }
 
 type DeriveType struct {
-	name       string
+	baseType
 	base       Type
 	deriveTags []DeriveTag
 }
@@ -243,14 +274,20 @@ func NewDeriveType(base Type, deriveTags []DeriveTag) *DeriveType {
 		name = append(name, []byte(tag.GetTag()))
 	}
 	return &DeriveType{
-		name:       name,
+		baseType: baseType{
+			name: name,
+		},
 		base:       base,
 		deriveTags: deriveTags,
 	}
 }
 
-func (deriveType *DeriveType) GetName() string {
-	return deriveType.name
+func (typ *DeriveType) GetBaseType() Type {
+	return typ.base
+}
+
+func (typ *DeriveType) IsDeriveType() bool {
+	return true
 }
 
 func (deriveType *DeriveType) isPriorityOf(typ Type) {
@@ -282,15 +319,18 @@ type Declaration struct {
 	identifier  *Identifier
 	initializer Expression
 
-	// Use identifier's location as Declaration's location.
+	// Use type's location as Declaration's location.
+	location *common.Location
 }
 
 func NewDeclaration(typ Type, identifier *Identifier, initializer Expression,
 	location *common.Location) *Declaration {
 	return &Declaration{
-		typ: typ,
-		identifier: identifier,
+		typ:         typ,
+		identifier:  identifier,
 		initializer: initializer,
+
+		location: location,
 	}
 }
 
@@ -299,7 +339,7 @@ func (declaration *Declaration) GetName() string {
 }
 
 func (declaration *Declaration) GetLocation() *common.Location {
-	return declaration.identifier.GetLocation()
+	return declaration.location
 }
 
 func (declaration *Declaration) Fix(context *Context) {

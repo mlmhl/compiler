@@ -4,6 +4,7 @@ import (
 	"github.com/mlmhl/compiler/gstac/compiler/ast"
 	"github.com/mlmhl/compiler/gstac/parser"
 	"github.com/mlmhl/compiler/gdync/interpreter/clog"
+	"github.com/mlmhl/compiler/gstac/errors"
 )
 
 type Compiler struct {
@@ -17,7 +18,7 @@ type Compiler struct {
 func NewCompiler() *Compiler {
 	return &Compiler{
 		parser: parser.NewParser(),
-		globalContext: ast.NewContext(nil, nil),
+		globalContext: ast.NewContext(nil, nil, nil),
 		statements: []ast.Statement{},
 	}
 }
@@ -39,11 +40,17 @@ func (compiler *Compiler) create() {
 
 // Semantic Analysis
 func (compiler *Compiler) fix() {
+	var err errors.Error
+
 	for _, statement := range(compiler.statements) {
-		statement.Fix(compiler.globalContext)
+		if err = statement.Fix(compiler.globalContext); err != nil {
+			compiler.logger.CompileError(err)
+		}
 	}
 	for _, function := range(compiler.globalContext.GetFunctionList()) {
-		function.Fix(compiler.globalContext)
+		if err = function.Fix(compiler.globalContext); err != nil {
+			compiler.logger.CompileError(err)
+		}
 	}
 }
 

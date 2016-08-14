@@ -119,7 +119,7 @@ func (compiler *Compiler) typeSpecifier() (ast.Type, errors.Error) {
 	parser := compiler.parser
 	logger := compiler.logger
 
-	var base Type
+	var base ast.Type
 	var err errors.Error
 
 	base, err = compiler.basicTypeSpecifier()
@@ -189,6 +189,8 @@ func (compiler *Compiler) parameterList() ([]*ast.Parameter, errors.Error) {
 	}
 
 	for {
+		location := tok.GetLocation()
+
 		typ, err := compiler.typeSpecifier()
 		if err != nil {
 			return nil, err
@@ -206,7 +208,7 @@ func (compiler *Compiler) parameterList() ([]*ast.Parameter, errors.Error) {
 			)
 		}
 		parameterList = append(parameterList, ast.NewParameter(typ,
-			ast.NewIdentifier(tok.GetValue(), tok.GetLocation())))
+			ast.NewIdentifier(tok.GetValue(), tok.GetLocation()), location))
 
 		tok, err = parser.Next()
 		if err != nil {
@@ -604,10 +606,7 @@ func (compiler *Compiler) assignExpression() (ast.Expression, errors.Error) {
 
 	var left ast.Expression
 
-	left, err = compiler.primaryExpression()
-	if err != nil {
-		return nil, err
-	}
+	left = compiler.primaryExpression()
 
 	tok, err = parser.Next()
 	if err != nil {
@@ -769,9 +768,9 @@ func (compiler *Compiler) unaryExpression() ast.Expression {
 	}
 
 	if tok.GetType() == token.SUBTRACT_ID {
-		return ast.NewMinusExpression(compiler.unaryExpression())
+		return ast.NewMinusExpression(compiler.unaryExpression(), tok.GetLocation())
 	} else if tok.GetType() == token.NOT_ID {
-		return ast.NewLogicalNotExpression(compiler.unaryExpression())
+		return ast.NewLogicalNotExpression(compiler.unaryExpression(), tok.GetLocation())
 	} else {
 		return compiler.primaryExpression()
 	}
@@ -815,9 +814,9 @@ func (compiler *Compiler) primaryExpression() ast.Expression {
 		}
 
 		if tok.GetType() == token.INCREMENT_ID {
-			result = ast.NewIncrementExpression(result)
+			result = ast.NewIncrementExpression(result, tok.GetLocation())
 		} else if tok.GetType() == token.DECREMENT_ID {
-			result = ast.NewDecrementExpression(result)
+			result = ast.NewDecrementExpression(result, tok.GetLocation())
 		} else {
 			parser.RollBack(1)
 		}

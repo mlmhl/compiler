@@ -13,10 +13,10 @@ import (
 
 type Expression interface {
 	Fix(context *Context) (Expression, errors.Error)
-	CastTo(destType Type) (Expression, errors.Error)
+	CastTo(destType Type, context *Context) (Expression, errors.Error)
 	Generate(context *Context)
 
-	getType() Type
+	getType(context *Context) (Type, errors.Error)
 	getLocation() *common.Location
 }
 
@@ -33,16 +33,19 @@ func (expression *baseExpression) Fix(context *Context) (Expression, errors.Erro
 	return expression, nil
 }
 
-func (expression *baseExpression) CastTo(destType Type) (Expression, errors.Error) {
-	// NO-OP
-	return typeCast(expression.this.getType(), destType, expression)
+func (expression *baseExpression) CastTo(destType Type, context *Context) (Expression, errors.Error) {
+	srcType, err := expression.this.getType(context)
+	if err != nil {
+		return expression, err
+	}
+	return typeCast(srcType, destType, expression)
 }
 
 func (expression *baseExpression) Generate(context *Context) {
 	// NO-OP
 }
 
-func (expression *baseExpression) getType() Type {
+func (expression *baseExpression) getType(context *Context) (Type, errors.Error) {
 	panic("Can't invoke `getType` on " + reflect.TypeOf(expression).Elem().Name())
 }
 
@@ -60,8 +63,8 @@ type baseValueExpression struct {
 	location *common.Location
 }
 
-func (expression *baseValueExpression) getType() Type {
-	return expression.typ
+func (expression *baseValueExpression) getType(context *Context) (Type, errors.Error) {
+	return expression.typ, nil
 }
 
 func (expression *baseValueExpression) getLocation() *common.Location {
@@ -226,9 +229,13 @@ func (expression *ArrayLiteralExpression) Fix(context *Context) (Expression, err
 	return expression, nil
 }
 
-func (expression *ArrayLiteralExpression) CastTo(destType Type) Expression {
+func (expression *ArrayLiteralExpression) CastTo(destType Type, context *Context) Expression {
+	var err errors.Error
 	for i, exp := range expression.values {
-		expression.values[i] = exp.CastTo(destType)
+		expression.values[i], err = exp.CastTo(destType, context)
+		if err != nil {
+			return expression, err
+		}
 	}
 	return expression
 }
@@ -250,6 +257,10 @@ func NewIdentifierExpression(identifier *Identifier) *IdentifierExpression {
 	}
 	expression.this = expression
 	return expression
+}
+
+func (expression *IdentifierExpression) getIdentifier() *Identifier {
+	return expression.identifier
 }
 
 type assignExpression struct {
@@ -327,7 +338,7 @@ func NewAssignExpression(typ int, left, operand Expression) Expression {
 	return expression
 }
 
-func (expression *assignExpression) Fix(context *Context) {
+func (expression *assignExpression) Fix(context *Context) (Expression, errors.Error) {
 	var err errors.Error
 	expression.left, err = expression.left.Fix(context)
 	if err != nil {
@@ -337,12 +348,16 @@ func (expression *assignExpression) Fix(context *Context) {
 	if err != nil {
 		return expression, err
 	}
-	expression.operand, err = expression.operand.CastTo(expression.left.getType())
+	srcType, err := expression.left.getType(context)
+	if err != nil {
+		return expression, err
+	}
+	expression.operand, err = expression.operand.CastTo(srcType, context)
 	return expression, err
 }
 
-func (expression *assignExpression) getType() Type {
-	return expression.left.getType()
+func (expression *assignExpression) getType(context *Context) (Type, errors.Error) {
+	return expression.left.getType(context)
 }
 
 func (expression *assignExpression) getLocation() *common.Location {
@@ -379,27 +394,58 @@ func (expression *baseBinaryExpression) Fix(context *Context) (Expression, error
 		return expression.this.execute(l.getValue(), r.getValue(), expression.left.getLocation())
 	}
 
-	if expression.left.getType().isPriorityOf(expression.right.getType()) {
-		expression.right, err = expression.right.CastTo(expression.left.getType())
+	var leftType Type
+	leftType, err = expression.left.getType(context)
+	if err != nil {
+		return expression, err
+	}
+
+	var rightType Type
+	rightType, err = expression.right.getType(context)
+	if err != nil {
+		return expression, err
+	}
+
+	if leftType.isPriorityOf(rightType) {
+		expression.right, err = expression.right.CastTo(expression.left.getType(context))
 	} else {
-		expression.left, err = expression.left.CastTo(expression.right.getType())
+		expression.left, err = expression.left.CastTo(expression.right.getType(context))
 	}
 	return expression, err
 }
 
-func (expression *baseBinaryExpression) CastTo(destType Type) (Expression, errors.Error) {
-	srcType := expression.left.getType()
-	if expression.right.getType().isPriorityOf(srcType) {
-		srcType = expression.right.getType()
+func (expression *baseBinaryExpression) CastTo(destType Type, context *Context) (Expression, errors.Error) {
+	srcType, err := expression.left.getType(context)
+	if err != nil {
+		return expression, err
+	}
+
+	rightType, err := expression.right.getType(context)
+	if err != nil {
+		return expression, err
+	}
+
+	if rightType.isPriorityOf(srcType) {
+		srcType = rightType
 	}
 	return typeCast(srcType, destType, expression)
 }
 
-func (expression *baseBinaryExpression) getType() Type {
-	if expression.left.getType().isPriorityOf(expression.right.getType()) {
-		return expression.left.getType()
+func (expression *baseBinaryExpression) getType(context *Context) (Type, errors.Error) {
+	leftType, err := expression.left.getType(context)
+	if err != nil {
+		return expression, err
+	}
+
+	rightType, err := expression.right.getType(context)
+	if err != nil {
+		return expression, err
+	}
+
+	if leftType.isPriorityOf(rightType) {
+		return leftType
 	} else {
-		return expression.right.getType()
+		return rightType
 	}
 }
 
@@ -1072,12 +1118,15 @@ func NewLogicalNotExpression(operand Expression, location *common.Location) *Log
 }
 
 func (expression *LogicalNotExpression) Fix(context *Context) (Expression, errors.Error) {
-	typ := expression.operand.getType()
+	var err errors.Error
+
+	typ, err := expression.operand.getType(context)
+	if err != nil {
+		return expression, err
+	}
 	if typ != BOOL_TYPE {
 		return nil, errors.NewInvalidOperationError("LOGICAL_OR", expression.getLocation(), typ.GetName())
 	}
-
-	var err errors.Error
 
 	expression.operand, err = expression.operand.Fix(context)
 	if err != nil {
@@ -1092,8 +1141,8 @@ func (expression *LogicalNotExpression) Fix(context *Context) (Expression, error
 	return expression, nil
 }
 
-func (expression *LogicalNotExpression) getType() Type {
-	return BOOL_TYPE
+func (expression *LogicalNotExpression) getType(context *Context) (Type, errors.Error) {
+	return BOOL_TYPE, nil
 }
 
 func (expression *LogicalNotExpression) getLocation() *common.Location {
@@ -1117,12 +1166,12 @@ func NewMinusExpression(operand Expression, location *common.Location) *MinusExp
 }
 
 func (expression *MinusExpression) Fix(context *Context) (Expression, errors.Error) {
-	typ := expression.operand.getType()
+	var err errors.Error
+
+	typ, err := expression.operand.getType(context)
 	if typ != INTEGER_TYPE && typ != FLOAT_TYPE {
 		return nil, errors.NewInvalidOperationError("MINUS", typ.GetName())
 	}
-
-	var err errors.Error
 
 	expression.operand, err = expression.operand.Fix(context)
 	if err != nil {
@@ -1141,8 +1190,8 @@ func (expression *MinusExpression) Fix(context *Context) (Expression, errors.Err
 	return expression, nil
 }
 
-func (expression *MinusExpression) getType() Type {
-	return expression.operand.getType()
+func (expression *MinusExpression) getType(context *Context) (Type, errors.Error) {
+	return expression.operand.getType(context)
 }
 
 func (expression *MinusExpression) getLocation() *common.Location {
@@ -1166,13 +1215,16 @@ func NewIncrementExpression(operand Expression, location *common.Location) *Incr
 }
 
 func (expression *IncrementExpression) Fix(context *Context) (Expression, errors.Error) {
-	typ := expression.operand.getType()
+	var err errors.Error
+
+	typ, err := expression.operand.getType(context)
+	if err != nil {
+		return expression, err
+	}
 	if typ != INTEGER_TYPE {
 		return nil, errors.NewInvalidOperationError("INCREMENT",
 			expression.operand.getLocation(), typ.GetName())
 	}
-
-	var err errors.Error
 
 	expression.operand, err = expression.operand.Fix(context)
 	if err != nil {
@@ -1181,14 +1233,14 @@ func (expression *IncrementExpression) Fix(context *Context) (Expression, errors
 
 	expr, ok := expression.operand.(valueExpression)
 	if ok {
-		return NewIntegerExpression(expr.getValue().(int64) + 1, expression.getLocation()), nil
+		return NewIntegerExpression(expr.getValue().(int64)+1, expression.getLocation()), nil
 	}
 
 	return expression, nil
 }
 
-func (expression *IncrementExpression) getType() Type {
-	return expression.operand.getType()
+func (expression *IncrementExpression) getType(context *Context) (Type, errors.Error) {
+	return expression.operand.getType(context)
 }
 
 func (expression *IncrementExpression) getLocation() *common.Location {
@@ -1203,7 +1255,7 @@ type DecrementExpression struct {
 func NewDecrementExpression(operand Expression, location *common.Location) *DecrementExpression {
 	expression := &DecrementExpression{
 		unaryExpression: unaryExpression{
-			operand: operand,
+			operand:  operand,
 			location: location,
 		},
 	}
@@ -1212,13 +1264,16 @@ func NewDecrementExpression(operand Expression, location *common.Location) *Decr
 }
 
 func (expression *DecrementExpression) Fix(context *Context) (Expression, errors.Error) {
-	typ := expression.operand.getType()
+	var err errors.Error
+
+	typ, err := expression.operand.getType(context)
+	if err != nil {
+		return expression, err
+	}
 	if typ != INTEGER_TYPE {
 		return nil, errors.NewInvalidOperationError("DECREMENT",
 			expression.operand.getLocation(), typ.GetName())
 	}
-
-	var err errors.Error
 
 	expression.operand, err = expression.operand.Fix(context)
 	if err != nil {
@@ -1227,14 +1282,14 @@ func (expression *DecrementExpression) Fix(context *Context) (Expression, errors
 
 	expr, ok := expression.operand.(valueExpression)
 	if ok {
-		return NewIntegerExpression(expr.getValue().(int64) - 1, expression.getLocation()), nil
+		return NewIntegerExpression(expr.getValue().(int64)-1, expression.getLocation()), nil
 	}
 
 	return expression, nil
 }
 
-func (expression *DecrementExpression) getType() Type {
-	return expression.operand.getType()
+func (expression *DecrementExpression) getType(context *Context) Type {
+	return expression.operand.getType(context)
 }
 
 func (expression *DecrementExpression) getLocation() *common.Location {
@@ -1244,6 +1299,10 @@ func (expression *DecrementExpression) getLocation() *common.Location {
 type FunctionCallExpression struct {
 	identifier *Identifier
 	arguments  []*Argument
+
+	function *Function
+
+	// use identifier's location as expression's location
 }
 
 func NewFunctionCallExpression(identifier *Identifier,
@@ -1251,10 +1310,67 @@ func NewFunctionCallExpression(identifier *Identifier,
 	return &FunctionCallExpression{
 		identifier: identifier,
 		arguments:  arguments,
+
+		function: nil,
 	}
 }
 
+func (expression *FunctionCallExpression) Fix(context *Context) (Expression, errors.Error) {
+	var err errors.Error
+
+	if expression.function == nil {
+		err = expression.searchFunction(context)
+		if err != nil {
+			return expression, nil
+		}
+	}
+
+	args := expression.arguments
+	params := expression.function.GetParameterList()
+
+	if len(args) != len(params) {
+		return nil, errors.NewArgumentCountMismatchError(len(params),
+			len(args), expression.identifier.GetLocation())
+	}
+
+	for i, arg := range args {
+		if err = arg.Fix(context); err != nil {
+			return expression, err
+		}
+		if err = arg.CastTo(params[i].GetType()); err != nil {
+			return expression, err
+		}
+	}
+
+	return expression, nil
+}
+
+func (expression *FunctionCallExpression) getType(context *Context) (Type, errors.Error) {
+	if expression.function == nil {
+		err := expression.searchFunction(context)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return expression.function.GetType().GetName(), nil
+}
+
+func (expression *FunctionCallExpression) GetLocation() *common.Location {
+	return expression.identifier.GetLocation()
+}
+
+func (expression *FunctionCallExpression) searchFunction(context *Context) errors.Error {
+	if expression.function == nil {
+		expression.function = context.GetFunction(expression.identifier.GetName())
+	}
+	if expression.function == nil {
+		return errors.NewFunctionNotFoundError(expression.identifier.GetName(), expression.GetLocation())
+	}
+	return nil
+}
+
 type IndexExpression struct {
+	baseExpression
 	array Expression
 	index Expression
 }
@@ -1266,8 +1382,51 @@ func NewIndexExpression(array, index Expression) *IndexExpression {
 	}
 }
 
+func (expression *IndexExpression) Fix(context *Context) (Expression, errors.Error) {
+	var err errors.Error
+
+	expression.array, err = expression.array.Fix(context)
+	if err != nil {
+		return expression, err
+	}
+
+	var typ Type
+
+	typ, err = expression.array.getType()
+	if !typ.IsDeriveType() {
+		return expression, errors.NewInvalidTypeError(typ.GetName(), "array", expression.getLocation())
+	}
+
+	expression.index, err = expression.index.Fix(context)
+	if err != nil {
+		return expression, err
+	}
+	typ, err = expression.index.getType()
+	if typ != INTEGER_TYPE {
+		return expression, errors.NewIndexNotIntError(typ.GetName(), expression.index.getLocation())
+	}
+
+	return expression, nil
+}
+
+func (expression *IndexExpression) getType() (Type, errors.Error) {
+	typ, err := expression.array.getType()
+	if err != nil {
+		return nil, err
+	}
+	return typ.GetBaseType(), nil
+}
+
+func (expression *IndexExpression) getLocation() *common.Location {
+	return expression.array.getLocation()
+}
+
 type castExpression struct {
 	operand Expression
+}
+
+func (expression *castExpression) getLocation() *common.Location {
+	return castExpression.operand.getLocation()
 }
 
 type IntegerToFloatCastExpression struct {
@@ -1282,6 +1441,10 @@ func NewIntegerToFloatCastExpression(operand Expression) *IntegerToFloatCastExpr
 	}
 }
 
+func (expression *IntegerToFloatCastExpression) getType() (Type, errors.Error) {
+	return FLOAT_TYPE, nil
+}
+
 type FloatToIntegerCastExpression struct {
 	castExpression
 }
@@ -1292,6 +1455,10 @@ func NewFloatToIntegerCastExpression(operand Expression) *FloatToIntegerCastExpr
 			operand: operand,
 		},
 	}
+}
+
+func (expression *FloatToIntegerCastExpression) getType() (Type, errors.Error) {
+	return INTEGER_TYPE, nil
 }
 
 type NullToStringCastExpression struct {
@@ -1306,6 +1473,10 @@ func NewNullToStringCastExpression(operand Expression) *NullToStringCastExpressi
 	}
 }
 
+func (expression *NullToStringCastExpression) getType() (Type, errors.Error) {
+	return STRING_TYPE, nil
+}
+
 type BoolToStringCastExpression struct {
 	castExpression
 }
@@ -1316,6 +1487,10 @@ func NewBoolToStringCastExpression(operand Expression) *NullToStringCastExpressi
 			operand: operand,
 		},
 	}
+}
+
+func (expression *BoolToStringCastExpression) getType() (Type, errors.Error) {
+	return STRING_TYPE, nil
 }
 
 type IntegerToStringCastExpression struct {
@@ -1330,6 +1505,10 @@ func NewIntegerToStringCastExpression(operand Expression) *IntegerToStringCastEx
 	}
 }
 
+func (expression *IntegerToStringCastExpression) getType() (Type, errors.Error) {
+	return STRING_TYPE, nil
+}
+
 type FloatToStringCastExpression struct {
 	castExpression
 }
@@ -1342,16 +1521,75 @@ func NewFloatToStringCastExpression(operand Expression) *FloatToStringCastExpres
 	}
 }
 
-type ArrayCreationExpression struct {
-	typ        Type
-	dimensions []Expression
+func (expression *FloatToStringCastExpression) getType() (Type, errors.Error) {
+	return STRING_TYPE, nil
 }
 
-func NewArrayCreationExpression(typ Type, dimensions []Expression) *ArrayCreationExpression {
-	return &ArrayCreationExpression{
-		typ:        typ,
+type ArrayCreationExpression struct {
+	baseExpression
+	baseType   Type
+	dimensions []Expression
+
+	location *common.Location
+
+	typ Type
+}
+
+func NewArrayCreationExpression(baseType Type, dimensions []Expression,
+	location *common.Location) *ArrayCreationExpression {
+	expression := &ArrayCreationExpression{
+		baseType:   baseType,
 		dimensions: dimensions,
+
+		location: location,
+
+		typ: nil,
 	}
+	expression.this = expression
+	return expression
+}
+
+func (expression *ArrayCreationExpression) Fix(context *Context) (Expression, errors.Error) {
+	var err errors.Error
+
+	for i, dim := range expression.dimensions {
+		expression.dimensions[i], err = dim.Fix(context)
+		if err != nil {
+			return expression, err
+		}
+		typ, err := expression.dimensions[i].getType(context)
+		if err != nil {
+			return expression, err
+		}
+		if typ != INTEGER_TYPE {
+			return expression, errors.NewArraySizeNotIntError(typ.GetName(),
+				expression.dimensions[i].getLocation())
+		}
+	}
+	if expression.typ == nil {
+		expression.fetchType()
+	}
+
+	return expression, nil
+}
+
+func (expression *ArrayCreationExpression) getType(context *Context) (Type, errors.Error) {
+	if expression.typ == nil {
+		expression.fetchType()
+	}
+	return expression.typ, nil
+}
+
+func (expression *ArrayCreationExpression) getLocation() *common.Location {
+	return expression.location
+}
+
+func (expression *ArrayCreationExpression) fetchType() {
+	deriveTags := []DeriveTag{}
+	for i := 0; i < len(expression.dimensions); i++ {
+		deriveTags = append(deriveTags, NewArrayDerive())
+	}
+	expression.typ = NewDeriveType(expression.baseType, deriveTags)
 }
 
 //
@@ -1376,9 +1614,9 @@ func typeCast(srcType, destType Type, operand Expression) (Expression, errors.Er
 }
 
 func nullTypeCast(destType Type, operand Expression) (Expression, errors.Error) {
-	if destType == NULL_TYPE {
+	if destType.Equal(NULL_TYPE) {
 		return operand, nil
-	} else if destType == STRING_TYPE {
+	} else if destType.Equal(STRING_TYPE) {
 		return NewNullToStringCastExpression(operand), nil
 	} else {
 		return nil, errors.NewTypeCastError(NULL_TYPE, destType, operand.getLocation())
@@ -1386,9 +1624,9 @@ func nullTypeCast(destType Type, operand Expression) (Expression, errors.Error) 
 }
 
 func boolTypeCast(destType Type, operand Expression) (Expression, errors.Error) {
-	if destType == BOOL_TYPE {
+	if destType.Equal(BOOL_TYPE) {
 		return operand, nil
-	} else if destType == STRING_TYPE {
+	} else if destType.Equal(STRING_TYPE) {
 		return NewBoolToStringCastExpression(operand), nil
 	} else {
 		return nil, errors.NewTypeCastError(BOOL_TYPE, destType, operand.getLocation())
@@ -1396,11 +1634,11 @@ func boolTypeCast(destType Type, operand Expression) (Expression, errors.Error) 
 }
 
 func integerTypeCast(destType Type, operand Expression) (Expression, errors.Error) {
-	if destType == INTEGER_TYPE {
+	if destType.Equal(INTEGER_TYPE) {
 		return operand, nil
-	} else if destType == FLOAT_TYPE {
+	} else if destType.Equal(FLOAT_TYPE) {
 		return NewIntegerToFloatCastExpression(operand), nil
-	} else if destType == STRING_TYPE {
+	} else if destType.Equal(STRING_TYPE) {
 		return NewIntegerToStringCastExpression(operand), nil
 	} else {
 		return nil, errors.NewTypeCastError(INTEGER_TYPE, destType, operand.getLocation())
@@ -1408,11 +1646,11 @@ func integerTypeCast(destType Type, operand Expression) (Expression, errors.Erro
 }
 
 func floatTypeCast(destType Type, operand Expression) (Expression, errors.Error) {
-	if destType == INTEGER_TYPE {
+	if destType.Equal(INTEGER_TYPE) {
 		return NewFloatToIntegerCastExpression(operand), nil
-	} else if destType == FLOAT_TYPE {
+	} else if destType.Equal(FLOAT_TYPE) {
 		return operand, nil
-	} else if destType == STRING_TYPE {
+	} else if destType.Equal(STRING_TYPE) {
 		return NewFloatToStringCastExpression(operand), nil
 	} else {
 		return nil, errors.NewTypeCastError(FLOAT_TYPE, destType, operand.getLocation())

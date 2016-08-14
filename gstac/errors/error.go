@@ -127,7 +127,7 @@ func NewParenthesesNotMatchedError(leftDesc, rightDesc string,
 	return &ParenthesesNotMatchedError{
 		baseError: baseError{
 			message: fmt.Sprintf("Can't find %s to match %s at %s, %d, %d", rightDesc,
-			leftDesc, leftLoc.GetFileName(), leftLoc.GetLine(), leftLoc.GetPosition()),
+				leftDesc, leftLoc.GetFileName(), leftLoc.GetLine(), leftLoc.GetPosition()),
 			location: rightLoc,
 		},
 	}
@@ -140,8 +140,8 @@ type TypeCastError struct {
 func NewTypeCastError(srcType, destType ast.Type, location *common.Location) *TypeCastError {
 	return &TypeCastError{
 		baseError: baseError{
-			message: fmt.Sprintf("can't cast %s to %s", srcType.GetName(), destType.GetName()),
-			location, location,
+			message:  fmt.Sprintf("can't cast %s to %s", srcType.GetName(), destType.GetName()),
+			location: location,
 		},
 	}
 }
@@ -153,8 +153,90 @@ type InvalidOperationError struct {
 func NewInvalidOperationError(op string, location *common.Location, types ...string) *InvalidOperationError {
 	return &InvalidOperationError{
 		baseError: baseError{
-			message: fmt.Sprintf("Can't invoke %s operation on %v", op, types),
+			message:  fmt.Sprintf("Can't invoke %s operation on %v", op, types),
 			location: location,
+		},
+	}
+}
+
+type FunctionNotFoundError struct {
+	baseError
+}
+
+func NewFunctionNotFoundError(name string, location *common.Location) *FunctionNotFoundError {
+	return &FunctionNotFoundError{
+		baseError: baseError{
+			message:  "Can't find function " + name,
+			location: location,
+		},
+	}
+}
+
+type ArgumentCountMismatchError struct {
+	baseError
+}
+
+func NewArgumentCountMismatchError(paramCount, argCount int,
+	location *common.Location) *ArgumentCountMismatchError {
+	return &ArgumentCountMismatchError{
+		baseError: baseError{
+			message: fmt.Sprintf("Target parameter count is %d, but argument size is %d instead",
+				argCount, paramCount),
+			location: location,
+		},
+	}
+}
+
+type InvalidTypeError struct {
+	baseError
+}
+
+func NewInvalidTypeError(typ, target string, location *common.Location) *InvalidTypeError {
+	return &InvalidTypeError{
+		baseError: baseError{
+			message:  fmt.Sprintf("Can't use %s as %s", typ, target),
+			location: location,
+		},
+	}
+}
+
+type IndexNotIntError struct {
+	baseError
+}
+
+func NewIndexNotIntError(typ string, location *common.Location) *IndexNotIntError {
+	return &IndexNotIntError{
+		baseError: baseError{
+			message:  fmt.Sprintf("Can't use %s as array index", typ),
+			location: location,
+		},
+	}
+}
+
+type ArraySizeNotIntError struct {
+	baseError
+}
+
+func NewArraySizeNotIntError(typ string, location *common.Location) *ArraySizeNotIntError {
+	return &ArraySizeNotIntError{
+		baseError: &baseError{
+			message:  fmt.Sprintf("Can't use %s as array size", typ),
+			location: location,
+		},
+	}
+}
+
+type ParameterDuplicatedDefinitionError struct {
+	baseError
+}
+
+func NewParameterDuplicatedDefinitionError(name string, firstLoc,
+	secondLoc *common.Location) *ParameterDuplicatedDefinitionError {
+	return &ParameterDuplicatedDefinitionError{
+		baseError: baseError{
+			message: fmt.Sprintf("Parameter %s has been defined at %s, %d, %d", name,
+			firstLoc.GetFileName(), firstLoc.GetLine(), firstLoc.GetPosition()),
+			location: secondLoc,
 		},
 	}
 }
