@@ -2,45 +2,78 @@ package codebyte
 
 import (
 	"testing"
+
+	files "github.com/mlmhl/goutil/io/files"
 )
 
-func TestCodeByteBuffer(t *testing.T) {
-	buffer := NewCodeByteBuffer()
+const (
+	fileName = "test"
+)
 
-	t.Log("Test: CodeByteBuffer Append...")
+var (
+	buffer *CodeByteBuffer = nil
+)
+
+func TestCodeByteBuffer_Write(t *testing.T) {
+	setup()
+
+	t.Log("Test: CodeByteBuffer Write...")
 
 	slice1 := []byte("hello world")
-	for _, b := range(slice1) {
-		buffer.Append(b)
+	for _, b := range slice1 {
+		buffer.Write(b)
 	}
-	length := len(slice1)
-	if buffer.Len() != length {
-		t.Fatalf("Wrong size: Wanted %d, got %d", length, buffer.Len())
-	}
+	readFromCodeByteBuffer(buffer, slice1, t)
 
 	t.Log("Passed...")
 
-	t.Log("Test: codeByteBuffer AppendSlice...")
+	cleanup()
+}
+
+func TestCodeByteBuffer_WriteSlice(t *testing.T) {
+	setup()
+
+	t.Log("Test: codeByteBuffer WriteSlice...")
 
 	slice2 := []byte("Hello World")
-	buffer.AppendSlice(slice2)
-	length += len(slice1)
-	if buffer.Len() != length {
-		t.Fatalf("Wrong size: Wanted %d, got %d", length, buffer.Len())
-	}
+	buffer.WriteSlice(slice2)
+	readFromCodeByteBuffer(buffer, slice2, t)
 
 	t.Log("Passed...")
 
-	t.Log("Test: CodeByteBuffer Pop...")
+	cleanup()
+}
 
-	bytes := []byte{}
+func setup() {
+	if buffer == nil {
+		buffer, _ = NewCodeByteBuffer(fileName)
+	}
+}
+
+func readFromCodeByteBuffer(buffer *CodeByteBuffer, target []byte, t *testing.T) {
+	content := []byte{}
+	buf := make([]byte, 1024)
+
+	buffer.Sync()
 	for !buffer.IsEmpty() {
-		bytes = append(bytes, buffer.Pop())
-	}
-	target := string(slice1) + string(slice2)
-	if string(bytes) != target {
-		t.Fatalf("Wrong content: Wanted %s, got %s", target, string(bytes))
+		cnt, err := buffer.Read(buf)
+		if err != nil {
+			t.Fatalf("Read from CodeByteBuffer error: %v", err)
+		}
+		content = append(content, buf[:cnt]...)
 	}
 
-	t.Log("Passed...")
+	if string(content) != string(target) {
+		t.Fatalf("Wrong content: Wanted `%s`, got `%s`", string(target), string(content))
+	}
+
+	cleanup()
+}
+
+func cleanup() {
+	if buffer != nil {
+		buffer.Close()
+		files.Remove(fileName)
+		buffer = nil
+	}
 }
