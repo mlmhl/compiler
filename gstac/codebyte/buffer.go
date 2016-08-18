@@ -15,6 +15,9 @@ type CodeByteBuffer struct {
 	buffer []byte
 	file   *os.File
 	empty  bool
+
+	// Guaranteed to correctly handle simultaneous read and write files case
+	position int64
 }
 
 func NewCodeByteBuffer(fileName string) (*CodeByteBuffer, error) {
@@ -23,9 +26,10 @@ func NewCodeByteBuffer(fileName string) (*CodeByteBuffer, error) {
 		return nil, err
 	}
 	return &CodeByteBuffer{
-		buffer: []byte{},
-		file:   file,
-		empty:  false,
+		buffer:   []byte{},
+		file:     file,
+		empty:    false,
+		position: 0,
 	}, nil
 }
 
@@ -49,15 +53,15 @@ func (buffer *CodeByteBuffer) Read(b []byte) (int, error) {
 	if buffer.IsEmpty() {
 		return 0, nil
 	}
-	cnt, err := buffer.file.Read(b)
+	cnt, err := buffer.file.ReadAt(b, buffer.position)
 	if err != nil {
 		if err == io.EOF {
 			buffer.empty = true
-		} else {
-			return cnt, err
+			err = nil
 		}
 	}
-	return cnt, nil
+	buffer.position += int64(cnt)
+	return cnt, err
 }
 
 func (buffer *CodeByteBuffer) Sync() error {
