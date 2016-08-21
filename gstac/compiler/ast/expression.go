@@ -2,19 +2,21 @@ package ast
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 
 	"fmt"
 	"github.com/mlmhl/compiler/common"
 	"github.com/mlmhl/compiler/gstac/errors"
+	"github.com/mlmhl/compiler/gstac/executable"
 	"github.com/mlmhl/compiler/gstac/token"
-	"strconv"
+	"github.com/mlmhl/goutil/encoding"
 )
 
 type Expression interface {
 	Fix(context *Context) (Expression, errors.Error)
 	CastTo(destType Type, context *Context) (Expression, errors.Error)
-	Generate(context *Context)
+	Generate(executable *executable.Executable) ([]byte, errors.Error)
 
 	getType(context *Context) (Type, errors.Error)
 	getLocation() *common.Location
@@ -30,19 +32,20 @@ type baseExpression struct {
 
 func (expression *baseExpression) Fix(context *Context) (Expression, errors.Error) {
 	// No-OP
-	return expression, nil
+	return expression.this, nil
 }
 
 func (expression *baseExpression) CastTo(destType Type, context *Context) (Expression, errors.Error) {
 	srcType, err := expression.this.getType(context)
 	if err != nil {
-		return expression, err
+		return expression.this, err
 	}
-	return typeCast(srcType, destType, expression)
+	return typeCast(srcType, destType, expression.this)
 }
 
-func (expression *baseExpression) Generate(context *Context) {
+func (expression *baseExpression) Generate(executable *executable.Executable) ([]byte, errors.Error) {
 	// NO-OP
+	return nil, nil
 }
 
 func (expression *baseExpression) getType(context *Context) (Type, errors.Error) {
@@ -107,13 +110,24 @@ func NewBoolExpression(value bool, location *common.Location) *BoolExpression {
 	return expression
 }
 
+func (expression *BoolExpression) Generate(exe *executable.Executable) ([]byte, errors.Error) {
+	buffer := []byte{}
+	buffer = append(buffer, expression.location.Encode()...)
+	if expression.value {
+		buffer = append(buffer, executable.PUSH_BOOL_TRUE)
+	} else {
+		buffer = append(buffer, executable.PUSH_BOOL_FALSE)
+	}
+	return buffer, nil
+}
+
 func (expression *BoolExpression) getValue() interface{} {
 	return expression.value
 }
 
 type IntegerExpression struct {
 	baseValueExpression
-	value int
+	value int64
 }
 
 func NewIntegerExpression(value int64, location *common.Location) *IntegerExpression {
@@ -126,6 +140,15 @@ func NewIntegerExpression(value int64, location *common.Location) *IntegerExpres
 	}
 	expression.this = expression
 	return expression
+}
+
+func (expression *IntegerExpression) Generate(exe *executable.Executable) ([]byte, errors.Error) {
+	buffer := []byte{}
+	buffer = append(buffer, expression.location.Encode()...)
+	buffer = append(buffer, executable.PUSH_INT)
+	buffer = append(buffer, encoding.DefaultEncoder.Int(
+		exe.AddConstantValue(expression.value))...)
+	return buffer, nil
 }
 
 func (expression *IntegerExpression) getValue() interface{} {
@@ -147,6 +170,15 @@ func NewFloatExpression(value float64, location *common.Location) *FloatExpressi
 	}
 	expression.this = expression
 	return expression
+}
+
+func (expression *FloatExpression) Generate(exe *executable.Executable) ([]byte, errors.Error) {
+	buffer := []byte{}
+	buffer = append(buffer, expression.location.Encode()...)
+	buffer = append(buffer, executable.PUSH_FLOAT)
+	buffer = append(buffer, encoding.DefaultEncoder.Int(
+		exe.AddConstantValue(expression.value))...)
+	return buffer, nil
 }
 
 func (expression *FloatExpression) getValue() interface{} {
@@ -192,7 +224,7 @@ func NewStringExpression(value string, location *common.Location) (*StringExpres
 		value: string(buffer),
 	}
 	expression.this = expression
-	return expression
+	return expression, nil
 }
 
 func (expression *StringExpression) getValue() interface{} {
@@ -229,7 +261,7 @@ func (expression *ArrayLiteralExpression) Fix(context *Context) (Expression, err
 	return expression, nil
 }
 
-func (expression *ArrayLiteralExpression) CastTo(destType Type, context *Context) Expression {
+func (expression *ArrayLiteralExpression) CastTo(destType Type, context *Context) (Expression, errors.Error) {
 	var err errors.Error
 	for i, exp := range expression.values {
 		expression.values[i], err = exp.CastTo(destType, context)
@@ -237,7 +269,7 @@ func (expression *ArrayLiteralExpression) CastTo(destType Type, context *Context
 			return expression, err
 		}
 	}
-	return expression
+	return expression, nil
 }
 
 func (expression *ArrayLiteralExpression) getLocation() *common.Location {
@@ -257,6 +289,10 @@ func NewIdentifierExpression(identifier *Identifier) *IdentifierExpression {
 	}
 	expression.this = expression
 	return expression
+}
+
+func (expression *IdentifierExpression) getLocation() *common.Location {
+	return expression.identifier.GetLocation()
 }
 
 func (expression *IdentifierExpression) getIdentifier() *Identifier {
@@ -296,46 +332,50 @@ type ModAssignExpression struct {
 }
 
 func NewAssignExpression(typ int, left, operand Expression) Expression {
-	assignExpression := assignExpression{
+	expression := assignExpression{
 		left:    left,
 		operand: operand,
 	}
-	var expression *assignExpression
-
 	switch typ {
 	case token.ASSIGN_ID:
-		expression = &NormalAssignExpression{
-			assignExpression: assignExpression,
+		result := &NormalAssignExpression{
+			assignExpression: expression,
 		}
+		result.this = result
+		return result
 	case token.ADD_ASSIGN_ID:
-		expression = &AddAssignExpression{
-			assignExpression: assignExpression,
+		result := &AddAssignExpression{
+			assignExpression: expression,
 		}
+		result.this = result
+		return result
 	case token.SUBTRACT_ID:
-		expression = &SubtractAssignExpression{
-			assignExpression: assignExpression,
+		result := &SubtractAssignExpression{
+			assignExpression: expression,
 		}
+		result.this = result
+		return result
 	case token.MUL_ASSIGN_ID:
-		expression = &MultiplyAssignExpression{
-			assignExpression: assignExpression,
+		result := &MultiplyAssignExpression{
+			assignExpression: expression,
 		}
+		result.this = result
+		return result
 	case token.DIV_ASSIGN_ID:
-		expression = &DivideAssignExpression{
-			assignExpression: assignExpression,
+		result := &DivideAssignExpression{
+			assignExpression: expression,
 		}
+		result.this = result
+		return result
 	case token.MOD_ASSIGN_ID:
-		expression = &ModAssignExpression{
-			assignExpression: assignExpression,
+		result := &ModAssignExpression{
+			assignExpression: expression,
 		}
+		result.this = result
+		return result
 	default:
-		expression = nil
+		return nil
 	}
-
-	if expression != nil {
-		expression.this = expression
-	}
-
-	return expression
 }
 
 func (expression *assignExpression) Fix(context *Context) (Expression, errors.Error) {
@@ -407,9 +447,9 @@ func (expression *baseBinaryExpression) Fix(context *Context) (Expression, error
 	}
 
 	if leftType.isPriorityOf(rightType) {
-		expression.right, err = expression.right.CastTo(expression.left.getType(context))
+		expression.right, err = expression.right.CastTo(leftType, context)
 	} else {
-		expression.left, err = expression.left.CastTo(expression.right.getType(context))
+		expression.left, err = expression.left.CastTo(rightType, context)
 	}
 	return expression, err
 }
@@ -434,18 +474,18 @@ func (expression *baseBinaryExpression) CastTo(destType Type, context *Context) 
 func (expression *baseBinaryExpression) getType(context *Context) (Type, errors.Error) {
 	leftType, err := expression.left.getType(context)
 	if err != nil {
-		return expression, err
+		return leftType, err
 	}
 
 	rightType, err := expression.right.getType(context)
 	if err != nil {
-		return expression, err
+		return rightType, err
 	}
 
 	if leftType.isPriorityOf(rightType) {
-		return leftType
+		return leftType, nil
 	} else {
-		return rightType
+		return rightType, nil
 	}
 }
 
@@ -482,7 +522,7 @@ func (expression *AddExpression) execute(left, right interface{},
 			return NewNullExpression(location), nil
 		}
 		if r, ok := right.(string); ok {
-			return NewStringExpression("nil"+r, location), nil
+			return NewStringExpression("nil"+r, location)
 		} else {
 			return nil, errors.NewInvalidOperationError(tag, location, "null", reflect.TypeOf(right).Name())
 		}
@@ -493,12 +533,12 @@ func (expression *AddExpression) execute(left, right interface{},
 		switch r := right.(type) {
 		case string:
 			if l {
-				return NewStringExpression("true"+r, location), nil
+				return NewStringExpression("true"+r, location)
 			} else {
-				return NewStringExpression("false"+r, location), nil
+				return NewStringExpression("false"+r, location)
 			}
 		default:
-			return nil, errors.NewInvalidOperationError(tag, location, "bool", reflect.TypeOf(right).Name(), location)
+			return nil, errors.NewInvalidOperationError(tag, location, "bool", reflect.TypeOf(right).Name())
 		}
 	case int64:
 		switch r := right.(type) {
@@ -507,7 +547,7 @@ func (expression *AddExpression) execute(left, right interface{},
 		case float64:
 			return NewFloatExpression(float64(l)+r, location), nil
 		case string:
-			return NewStringExpression(strconv.Itoa(int(l))+r, location), nil
+			return NewStringExpression(strconv.Itoa(int(l))+r, location)
 		default:
 			return nil, errors.NewInvalidOperationError(tag, location, "int", reflect.TypeOf(right).Name())
 		}
@@ -518,7 +558,7 @@ func (expression *AddExpression) execute(left, right interface{},
 		case float64:
 			return NewFloatExpression(l+r, location), nil
 		case string:
-			return NewStringExpression(fmt.Sprintf("%f", l)+r, location), nil
+			return NewStringExpression(fmt.Sprintf("%f", l)+r, location)
 		default:
 			return nil, errors.NewInvalidOperationError(tag, location, "float", reflect.TypeOf(right).Name())
 		}
@@ -526,21 +566,21 @@ func (expression *AddExpression) execute(left, right interface{},
 		switch r := right.(type) {
 		case bool:
 			if r {
-				return NewStringExpression(l+"true", location), nil
+				return NewStringExpression(l+"true", location)
 			} else {
-				return NewStringExpression(l+"false", location), nil
+				return NewStringExpression(l+"false", location)
 			}
 		case int64:
-			return NewStringExpression(l+strconv.Itoa(int(r)), location), nil
+			return NewStringExpression(l+strconv.Itoa(int(r)), location)
 		case float64:
-			return NewStringExpression(l+fmt.Sprintf("%f", r), location), nil
+			return NewStringExpression(l+fmt.Sprintf("%f", r), location)
 		case string:
-			return NewStringExpression(l+r, location), nil
+			return NewStringExpression(l+r, location)
 		default:
 			return nil, errors.NewInvalidOperationError(tag, location, "string", reflect.TypeOf(right).Name())
 		}
 	default:
-		return nil, errors.NewInvalidOperationError(tag,
+		return nil, errors.NewInvalidOperationError(tag, location,
 			reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
 }
@@ -588,7 +628,7 @@ func (expression *SubtractExpression) execute(left, right interface{},
 			return nil, errors.NewInvalidOperationError(tag, location, "float", reflect.TypeOf(right).Name())
 		}
 	default:
-		return nil, errors.NewInvalidOperationError(tag,
+		return nil, errors.NewInvalidOperationError(tag, location,
 			reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
 }
@@ -636,7 +676,7 @@ func (expression *MultiplyExpression) execute(left, right interface{},
 			return nil, errors.NewInvalidOperationError(tag, location, "float", reflect.TypeOf(right).Name())
 		}
 	default:
-		return nil, errors.NewInvalidOperationError(tag,
+		return nil, errors.NewInvalidOperationError(tag, location,
 			reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
 }
@@ -683,7 +723,7 @@ func (expression *DivideExpression) execute(left, right interface{},
 			return nil, errors.NewInvalidOperationError(tag, location, "float", reflect.TypeOf(right).Name())
 		}
 	default:
-		return nil, errors.NewInvalidOperationError(tag,
+		return nil, errors.NewInvalidOperationError(tag, location,
 			reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
 }
@@ -719,7 +759,7 @@ func (expression *ModExpression) execute(left, right interface{},
 			return nil, errors.NewInvalidOperationError(tag, location, "int", reflect.TypeOf(right).Name())
 		}
 	default:
-		return nil, errors.NewInvalidOperationError(tag,
+		return nil, errors.NewInvalidOperationError(tag, location,
 			reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
 }
@@ -729,8 +769,8 @@ type EqualExpression struct {
 }
 
 func NewEqualExpression(left, right Expression) *EqualExpression {
-	expression := EqualExpression{
-		baseBinaryExpression: binaryExpression{
+	expression := &EqualExpression{
+		baseBinaryExpression: baseBinaryExpression{
 			left:  left,
 			right: right,
 		},
@@ -793,8 +833,8 @@ type NotEqualExpression struct {
 }
 
 func NewNotEqualExpression(left, right Expression) *NotEqualExpression {
-	expression := NotEqualExpression{
-		baseBinaryExpression: binaryExpression{
+	expression := &NotEqualExpression{
+		baseBinaryExpression: baseBinaryExpression{
 			left:  left,
 			right: right,
 		},
@@ -857,8 +897,8 @@ type GreaterThanExpression struct {
 }
 
 func NewGreaterThanExpression(left, right Expression) *GreaterThanExpression {
-	expression := GreaterThanExpression{
-		baseBinaryExpression: binaryExpression{
+	expression := &GreaterThanExpression{
+		baseBinaryExpression: baseBinaryExpression{
 			left:  left,
 			right: right,
 		},
@@ -883,7 +923,7 @@ func (expression *GreaterThanExpression) execute(left, right interface{},
 		case float64:
 			return NewBoolExpression(float64(l) > r, location), nil
 		default:
-			return nil, errors.NewInvalidOperationError(tag, location, "int", reflect.TypeOf(right))
+			return nil, errors.NewInvalidOperationError(tag, location, "int", reflect.TypeOf(right).Name())
 		}
 	case float64:
 		switch r := right.(type) {
@@ -892,10 +932,10 @@ func (expression *GreaterThanExpression) execute(left, right interface{},
 		case float64:
 			return NewBoolExpression(l > r, location), nil
 		default:
-			return nil, errors.NewInvalidOperationError(tag, location, "float", reflect.TypeOf(right))
+			return nil, errors.NewInvalidOperationError(tag, location, "float", reflect.TypeOf(right).Name())
 		}
 	default:
-		return nil, errors.NewInvalidOperationError(tag, location, reflect.TypeOf(left), reflect.TypeOf(right))
+		return nil, errors.NewInvalidOperationError(tag, location, reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
 }
 
@@ -904,8 +944,8 @@ type GreaterThanAndEqualExpression struct {
 }
 
 func NewGreaterThanAndEqualExpression(left, right Expression) *GreaterThanAndEqualExpression {
-	expression := GreaterThanAndEqualExpression{
-		baseBinaryExpression: binaryExpression{
+	expression := &GreaterThanAndEqualExpression{
+		baseBinaryExpression: baseBinaryExpression{
 			left:  left,
 			right: right,
 		},
@@ -930,7 +970,7 @@ func (expression *GreaterThanAndEqualExpression) execute(left, right interface{}
 		case float64:
 			return NewBoolExpression(float64(l) >= r, location), nil
 		default:
-			return nil, errors.NewInvalidOperationError(tag, location, "int", reflect.TypeOf(right))
+			return nil, errors.NewInvalidOperationError(tag, location, "int", reflect.TypeOf(right).Name())
 		}
 	case float64:
 		switch r := right.(type) {
@@ -939,10 +979,10 @@ func (expression *GreaterThanAndEqualExpression) execute(left, right interface{}
 		case float64:
 			return NewBoolExpression(l >= r, location), nil
 		default:
-			return nil, errors.NewInvalidOperationError(tag, location, "float", reflect.TypeOf(right))
+			return nil, errors.NewInvalidOperationError(tag, location, "float", reflect.TypeOf(right).Name())
 		}
 	default:
-		return nil, errors.NewInvalidOperationError(tag, location, reflect.TypeOf(left), reflect.TypeOf(right))
+		return nil, errors.NewInvalidOperationError(tag, location, reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
 }
 
@@ -951,8 +991,8 @@ type LessThanExpression struct {
 }
 
 func NewLessThanExpression(left, right Expression) *LessThanExpression {
-	expression := LessThanExpression{
-		baseBinaryExpression: binaryExpression{
+	expression := &LessThanExpression{
+		baseBinaryExpression: baseBinaryExpression{
 			left:  left,
 			right: right,
 		},
@@ -966,30 +1006,31 @@ func (expression *LessThanExpression) execute(left, right interface{},
 	tag := "LESS_THAN"
 
 	if left == nil || right == nil {
-		return errors.NewInvalidOperationError(tag, "null")
+		return nil, errors.NewInvalidOperationError(tag, location, "null")
 	}
 
 	switch l := left.(type) {
 	case int64:
 		switch r := right.(type) {
 		case int64:
-			return NewBoolExpression(l+r, location)
+			return NewBoolExpression(l < r, location), nil
 		case float64:
-			return NewBoolExpression(float64(l)+r, location)
+			return NewBoolExpression(float64(l) < r, location), nil
 		default:
-			return nil, errors.NewInvalidOperationError(tag, location, "int", reflect.TypeOf(right))
+			return nil, errors.NewInvalidOperationError(tag, location, "int", reflect.TypeOf(right).Name())
 		}
 	case float64:
 		switch r := right.(type) {
 		case int64:
-			return NewBoolExpression(l+float64(r), location)
+			return NewBoolExpression(l < float64(r), location), nil
 		case float64:
-			return NewBoolExpression(l+r, location)
+			return NewBoolExpression(l < r, location), nil
 		default:
-			return nil, errors.NewInvalidOperationError(tag, location, "float", reflect.TypeOf(right))
+			return nil, errors.NewInvalidOperationError(tag, location, "float", reflect.TypeOf(right).Name())
 		}
 	default:
-		return nil, errors.NewInvalidOperationError(tag, location, reflect.TypeOf(left), reflect.TypeOf(right))
+		return nil, errors.NewInvalidOperationError(tag, location,
+			reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
 }
 
@@ -998,8 +1039,8 @@ type LessThanAndEqualExpression struct {
 }
 
 func NewLessThanAndEqualExpression(left, right Expression) *LessThanAndEqualExpression {
-	expression := LessThanAndEqualExpression{
-		baseBinaryExpression: binaryExpression{
+	expression := &LessThanAndEqualExpression{
+		baseBinaryExpression: baseBinaryExpression{
 			left:  left,
 			right: right,
 		},
@@ -1013,18 +1054,18 @@ func (expression *LessThanAndEqualExpression) execute(left, right interface{},
 	tag := "LESS_THAN"
 
 	if left == nil || right == nil {
-		return nil, errors.NewInvalidOperationError(tag, "null")
+		return nil, errors.NewInvalidOperationError(tag, location, "null")
 	}
 
 	switch l := left.(type) {
 	case int64:
 		switch r := right.(type) {
 		case int64:
-			return NewBoolExpression(l <= r, location)
+			return NewBoolExpression(l <= r, location), nil
 		case float64:
-			return NewBoolExpression(float64(l) <= r, location)
+			return NewBoolExpression(float64(l) <= r, location), nil
 		default:
-			return nil, errors.NewInvalidOperationError(tag, location, "int", reflect.TypeOf(right))
+			return nil, errors.NewInvalidOperationError(tag, location, "int", reflect.TypeOf(right).Name())
 		}
 	case float64:
 		switch r := right.(type) {
@@ -1033,10 +1074,11 @@ func (expression *LessThanAndEqualExpression) execute(left, right interface{},
 		case float64:
 			return NewBoolExpression(l <= r, location), nil
 		default:
-			return nil, errors.NewInvalidOperationError(tag, "float", reflect.TypeOf(right))
+			return nil, errors.NewInvalidOperationError(tag, location, "float", reflect.TypeOf(right).Name())
 		}
 	default:
-		return nil, errors.NewInvalidOperationError(tag, location, reflect.TypeOf(left), reflect.TypeOf(right))
+		return nil, errors.NewInvalidOperationError(tag, location,
+			reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
 }
 
@@ -1046,7 +1088,7 @@ type LogicalOrExpression struct {
 
 func NewLogicalOrExpression(left, right Expression) *LogicalOrExpression {
 	expression := &LogicalOrExpression{
-		baseBinaryExpression: binaryExpression{
+		baseBinaryExpression: baseBinaryExpression{
 			left:  left,
 			right: right,
 		},
@@ -1063,7 +1105,8 @@ func (expression *LogicalOrExpression) execute(left, right interface{},
 	if lok && rok {
 		return NewBoolExpression(l || r, location), nil
 	} else {
-		return nil, errors.NewInvalidOperationError("LOGICAL_AND", reflect.TypeOf(left), reflect.TypeOf(right))
+		return nil, errors.NewInvalidOperationError("LOGICAL_AND", location,
+			reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
 }
 
@@ -1073,7 +1116,7 @@ type LogicalAndExpression struct {
 
 func NewLogicalAndExpression(left, right Expression) *LogicalAndExpression {
 	expression := &LogicalAndExpression{
-		baseBinaryExpression: binaryExpression{
+		baseBinaryExpression: baseBinaryExpression{
 			left:  left,
 			right: right,
 		},
@@ -1090,7 +1133,8 @@ func (expression *LogicalAndExpression) execute(left, right interface{},
 	if lok && rok {
 		return NewBoolExpression(l && r, location), nil
 	} else {
-		return nil, errors.NewInvalidOperationError("LOGICAL_AND", reflect.TypeOf(left), reflect.TypeOf(right))
+		return nil, errors.NewInvalidOperationError("LOGICAL_AND", location,
+			reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
 }
 
@@ -1106,9 +1150,9 @@ type LogicalNotExpression struct {
 	unaryExpression
 }
 
-func NewLogicalNotExpression(operand Expression, location *common.Location) *LogicalOrExpression {
-	expression := &LogicalOrExpression{
-		unaryExpression{
+func NewLogicalNotExpression(operand Expression, location *common.Location) *LogicalNotExpression {
+	expression := &LogicalNotExpression{
+		unaryExpression: unaryExpression{
 			operand:  operand,
 			location: location,
 		},
@@ -1170,7 +1214,7 @@ func (expression *MinusExpression) Fix(context *Context) (Expression, errors.Err
 
 	typ, err := expression.operand.getType(context)
 	if typ != INTEGER_TYPE && typ != FLOAT_TYPE {
-		return nil, errors.NewInvalidOperationError("MINUS", typ.GetName())
+		return nil, errors.NewInvalidOperationError("MINUS", expression.location, typ.GetName())
 	}
 
 	expression.operand, err = expression.operand.Fix(context)
@@ -1288,7 +1332,7 @@ func (expression *DecrementExpression) Fix(context *Context) (Expression, errors
 	return expression, nil
 }
 
-func (expression *DecrementExpression) getType(context *Context) Type {
+func (expression *DecrementExpression) getType(context *Context) (Type, errors.Error) {
 	return expression.operand.getType(context)
 }
 
@@ -1297,6 +1341,7 @@ func (expression *DecrementExpression) getLocation() *common.Location {
 }
 
 type FunctionCallExpression struct {
+	baseExpression
 	identifier *Identifier
 	arguments  []*Argument
 
@@ -1307,12 +1352,14 @@ type FunctionCallExpression struct {
 
 func NewFunctionCallExpression(identifier *Identifier,
 	arguments []*Argument) *FunctionCallExpression {
-	return &FunctionCallExpression{
+	expression := &FunctionCallExpression{
 		identifier: identifier,
 		arguments:  arguments,
 
 		function: nil,
 	}
+	expression.this = expression
+	return expression
 }
 
 func (expression *FunctionCallExpression) Fix(context *Context) (Expression, errors.Error) {
@@ -1337,7 +1384,7 @@ func (expression *FunctionCallExpression) Fix(context *Context) (Expression, err
 		if err = arg.Fix(context); err != nil {
 			return expression, err
 		}
-		if err = arg.CastTo(params[i].GetType()); err != nil {
+		if err = arg.CastTo(params[i].GetType(), context); err != nil {
 			return expression, err
 		}
 	}
@@ -1352,10 +1399,10 @@ func (expression *FunctionCallExpression) getType(context *Context) (Type, error
 			return nil, err
 		}
 	}
-	return expression.function.GetType().GetName(), nil
+	return expression.function.GetType(), nil
 }
 
-func (expression *FunctionCallExpression) GetLocation() *common.Location {
+func (expression *FunctionCallExpression) getLocation() *common.Location {
 	return expression.identifier.GetLocation()
 }
 
@@ -1364,7 +1411,7 @@ func (expression *FunctionCallExpression) searchFunction(context *Context) error
 		expression.function = context.GetFunction(expression.identifier.GetName())
 	}
 	if expression.function == nil {
-		return errors.NewFunctionNotFoundError(expression.identifier.GetName(), expression.GetLocation())
+		return errors.NewFunctionNotFoundError(expression.identifier.GetName(), expression.getLocation())
 	}
 	return nil
 }
@@ -1392,7 +1439,7 @@ func (expression *IndexExpression) Fix(context *Context) (Expression, errors.Err
 
 	var typ Type
 
-	typ, err = expression.array.getType()
+	typ, err = expression.array.getType(context)
 	if !typ.IsDeriveType() {
 		return expression, errors.NewInvalidTypeError(typ.GetName(), "array", expression.getLocation())
 	}
@@ -1401,7 +1448,7 @@ func (expression *IndexExpression) Fix(context *Context) (Expression, errors.Err
 	if err != nil {
 		return expression, err
 	}
-	typ, err = expression.index.getType()
+	typ, err = expression.index.getType(context)
 	if typ != INTEGER_TYPE {
 		return expression, errors.NewIndexNotIntError(typ.GetName(), expression.index.getLocation())
 	}
@@ -1409,8 +1456,8 @@ func (expression *IndexExpression) Fix(context *Context) (Expression, errors.Err
 	return expression, nil
 }
 
-func (expression *IndexExpression) getType() (Type, errors.Error) {
-	typ, err := expression.array.getType()
+func (expression *IndexExpression) getType(context *Context) (Type, errors.Error) {
+	typ, err := expression.array.getType(context)
 	if err != nil {
 		return nil, err
 	}
@@ -1426,54 +1473,63 @@ type castExpression struct {
 }
 
 func (expression *castExpression) getLocation() *common.Location {
-	return castExpression.operand.getLocation()
+	return expression.operand.getLocation()
 }
 
 type IntegerToFloatCastExpression struct {
+	baseExpression
 	castExpression
 }
 
 func NewIntegerToFloatCastExpression(operand Expression) *IntegerToFloatCastExpression {
-	return &IntegerToFloatCastExpression{
+	expression := &IntegerToFloatCastExpression{
 		castExpression: castExpression{
 			operand: operand,
 		},
 	}
+	expression.this = expression
+	return expression
 }
 
-func (expression *IntegerToFloatCastExpression) getType() (Type, errors.Error) {
+func (expression *IntegerToFloatCastExpression) getType(context *Context) (Type, errors.Error) {
 	return FLOAT_TYPE, nil
 }
 
 type FloatToIntegerCastExpression struct {
+	baseExpression
 	castExpression
 }
 
 func NewFloatToIntegerCastExpression(operand Expression) *FloatToIntegerCastExpression {
-	return &FloatToIntegerCastExpression{
+	expression := &FloatToIntegerCastExpression{
 		castExpression: castExpression{
 			operand: operand,
 		},
 	}
+	expression.this = expression
+	return expression
 }
 
-func (expression *FloatToIntegerCastExpression) getType() (Type, errors.Error) {
+func (expression *FloatToIntegerCastExpression) getType(context *Context) (Type, errors.Error) {
 	return INTEGER_TYPE, nil
 }
 
 type NullToStringCastExpression struct {
+	baseExpression
 	castExpression
 }
 
 func NewNullToStringCastExpression(operand Expression) *NullToStringCastExpression {
-	return &NullToStringCastExpression{
+	expression := &NullToStringCastExpression{
 		castExpression: castExpression{
 			operand: operand,
 		},
 	}
+	expression.this = expression
+	return expression
 }
 
-func (expression *NullToStringCastExpression) getType() (Type, errors.Error) {
+func (expression *NullToStringCastExpression) getType(context *Context) (Type, errors.Error) {
 	return STRING_TYPE, nil
 }
 
@@ -1494,34 +1550,40 @@ func (expression *BoolToStringCastExpression) getType() (Type, errors.Error) {
 }
 
 type IntegerToStringCastExpression struct {
+	baseExpression
 	castExpression
 }
 
 func NewIntegerToStringCastExpression(operand Expression) *IntegerToStringCastExpression {
-	return &IntegerToStringCastExpression{
+	expression := &IntegerToStringCastExpression{
 		castExpression: castExpression{
 			operand: operand,
 		},
 	}
+	expression.this = expression
+	return expression
 }
 
-func (expression *IntegerToStringCastExpression) getType() (Type, errors.Error) {
+func (expression *IntegerToStringCastExpression) getType(context *Context) (Type, errors.Error) {
 	return STRING_TYPE, nil
 }
 
 type FloatToStringCastExpression struct {
+	baseExpression
 	castExpression
 }
 
 func NewFloatToStringCastExpression(operand Expression) *FloatToStringCastExpression {
-	return &FloatToStringCastExpression{
+	expression := &FloatToStringCastExpression{
 		castExpression: castExpression{
 			operand: operand,
 		},
 	}
+	expression.this = expression
+	return expression
 }
 
-func (expression *FloatToStringCastExpression) getType() (Type, errors.Error) {
+func (expression *FloatToStringCastExpression) getType(context *Context) (Type, errors.Error) {
 	return STRING_TYPE, nil
 }
 
@@ -1619,7 +1681,7 @@ func nullTypeCast(destType Type, operand Expression) (Expression, errors.Error) 
 	} else if destType.Equal(STRING_TYPE) {
 		return NewNullToStringCastExpression(operand), nil
 	} else {
-		return nil, errors.NewTypeCastError(NULL_TYPE, destType, operand.getLocation())
+		return nil, errors.NewTypeCastError(NULL_TYPE.GetName(), destType.GetName(), operand.getLocation())
 	}
 }
 
@@ -1629,7 +1691,7 @@ func boolTypeCast(destType Type, operand Expression) (Expression, errors.Error) 
 	} else if destType.Equal(STRING_TYPE) {
 		return NewBoolToStringCastExpression(operand), nil
 	} else {
-		return nil, errors.NewTypeCastError(BOOL_TYPE, destType, operand.getLocation())
+		return nil, errors.NewTypeCastError(BOOL_TYPE.GetName(), destType.GetName(), operand.getLocation())
 	}
 }
 
@@ -1641,7 +1703,7 @@ func integerTypeCast(destType Type, operand Expression) (Expression, errors.Erro
 	} else if destType.Equal(STRING_TYPE) {
 		return NewIntegerToStringCastExpression(operand), nil
 	} else {
-		return nil, errors.NewTypeCastError(INTEGER_TYPE, destType, operand.getLocation())
+		return nil, errors.NewTypeCastError(INTEGER_TYPE.GetName(), destType.GetName(), operand.getLocation())
 	}
 }
 
@@ -1653,10 +1715,10 @@ func floatTypeCast(destType Type, operand Expression) (Expression, errors.Error)
 	} else if destType.Equal(STRING_TYPE) {
 		return NewFloatToStringCastExpression(operand), nil
 	} else {
-		return nil, errors.NewTypeCastError(FLOAT_TYPE, destType, operand.getLocation())
+		return nil, errors.NewTypeCastError(FLOAT_TYPE.GetName(), destType.GetName(), operand.getLocation())
 	}
 }
 
 func stringTypeCast(destType Type, operand Expression) (Expression, errors.Error) {
-	return nil, errors.NewTypeCastError(STRING_TYPE, destType, operand.getLocation())
+	return nil, errors.NewTypeCastError(STRING_TYPE.GetName(), destType.GetName(), operand.getLocation())
 }

@@ -3,6 +3,7 @@ package ast
 import (
 	"github.com/mlmhl/compiler/gstac/errors"
 	"github.com/mlmhl/goutil/container"
+	"strconv"
 )
 
 //
@@ -21,7 +22,7 @@ func newSymbolList() *SymbolList {
 
 // get symbol's index
 func (symbolList *SymbolList) Get(symbol string) int {
-	return symbolList.symbols.Get(symbol)
+	return symbolList.symbols.Get(symbol).(int)
 }
 
 // add a new symbol
@@ -31,6 +32,23 @@ func (symbolList *SymbolList) Put(symbol string) {
 
 func (symbolList *SymbolList) Contains(symbol string) bool {
 	return symbolList.symbols.Contains(symbol)
+}
+
+// Encode encode symbolList to code byte
+func (symbolList *SymbolList) Encode() []byte {
+	buf := []byte{'{'}
+	for _, entry := range(symbolList.symbols.EntrySet()) {
+		buf = append(buf, entry.GetKey()...)
+		buf = append(buf, ':')
+		buf = append(buf, strconv.Itoa(entry.GetValue().(int))...)
+		buf = append(buf, ',')
+	}
+	if len(buf) > 1 {
+		buf[len(buf) - 1] = '}'
+	} else  {
+		buf = append(buf, '}')
+	}
+	return buf
 }
 
 //
@@ -60,12 +78,16 @@ func NewContext(symbolList *SymbolList, outContext *Context, function *Function)
 	}
 }
 
+func (context *Context) IsGlobal() bool {
+	return context.outContext != nil
+}
+
 func (context *Context) GetVariable(name string) *Declaration {
 	if context.variables == nil {
 		return nil
 	}
 	if context.variables.Contains(name) {
-		return context.variables.Get(name)
+		return context.variables.Get(name).(*Declaration)
 	} else {
 		if context.outContext != nil {
 			return context.outContext.GetVariable(name)
@@ -80,7 +102,7 @@ func (context *Context) GetFunction(name string) *Function {
 		return nil
 	}
 	if context.functions.Contains(name) {
-		return context.functions.Get(name)
+		return context.functions.Get(name).(*Function)
 	} else {
 		if context.outContext != nil {
 			return context.outContext.GetFunction(name)
@@ -96,8 +118,8 @@ func (context *Context) GetSymbolList() *SymbolList {
 
 func (context *Context) GetFunctionList() []*Function {
 	functions := []*Function{}
-	for iterator := context.functions.Iterator(); ; iterator.HasNext() {
-		functions = append(functions, iterator.Next().(*Function))
+	for _, v := range(context.functions.ValueSet()) {
+		functions = append(functions, v.(*Function))
 	}
 	return functions
 }

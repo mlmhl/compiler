@@ -1,4 +1,4 @@
-package codebyte
+package executable
 
 import (
 	"io"
@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	THRESHOLD = 1024 * 1024 // 1M
+	threshold = 1024 * 1024 // 1M
 )
 
 type CodeByteBuffer struct {
@@ -44,7 +44,7 @@ func (buffer *CodeByteBuffer) Write(b byte) {
 
 func (buffer *CodeByteBuffer) WriteSlice(slice []byte) {
 	buffer.buffer = append(buffer.buffer, slice...)
-	if len(buffer.buffer) >= THRESHOLD {
+	if len(buffer.buffer) >= threshold {
 		buffer.Sync()
 	}
 }

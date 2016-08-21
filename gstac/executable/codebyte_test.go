@@ -1,4 +1,4 @@
-package codebyte
+package executable
 
 import (
 	"testing"

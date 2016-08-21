@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/mlmhl/compiler/common"
-	"github.com/mlmhl/compiler/gstac/compiler/ast"
 )
 
 type Error interface {
@@ -137,10 +136,10 @@ type TypeCastError struct {
 	baseError
 }
 
-func NewTypeCastError(srcType, destType ast.Type, location *common.Location) *TypeCastError {
+func NewTypeCastError(srcType, destType string, location *common.Location) *TypeCastError {
 	return &TypeCastError{
 		baseError: baseError{
-			message:  fmt.Sprintf("can't cast %s to %s", srcType.GetName(), destType.GetName()),
+			message:  fmt.Sprintf("can't cast %s to %s", srcType, destType),
 			location: location,
 		},
 	}
@@ -219,7 +218,7 @@ type ArraySizeNotIntError struct {
 
 func NewArraySizeNotIntError(typ string, location *common.Location) *ArraySizeNotIntError {
 	return &ArraySizeNotIntError{
-		baseError: &baseError{
+		baseError: baseError{
 			message:  fmt.Sprintf("Can't use %s as array size", typ),
 			location: location,
 		},
@@ -237,6 +236,19 @@ func NewParameterDuplicatedDefinitionError(name string, firstLoc,
 			message: fmt.Sprintf("Parameter %s has been defined at %s, %d, %d", name,
 			firstLoc.GetFileName(), firstLoc.GetLine(), firstLoc.GetPosition()),
 			location: secondLoc,
+		},
+	}
+}
+
+type ExecutableFileCreationError struct {
+	baseError
+}
+
+func NewExecutableFileCreationError(err error) *ExecutableFileCreationError {
+	return &ExecutableFileCreationError{
+		baseError: baseError{
+			message: err.Error(),
+			location: nil,
 		},
 	}
 }

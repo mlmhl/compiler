@@ -3,6 +3,7 @@ package ast
 import (
 	"github.com/mlmhl/compiler/common"
 	"github.com/mlmhl/compiler/gstac/errors"
+	"github.com/mlmhl/compiler/gstac/executable"
 )
 
 type Parameter struct {
@@ -51,9 +52,9 @@ func (argument *Argument) Fix(context *Context) errors.Error {
 	return err
 }
 
-func (argument *Argument) CastTo(destType Type) errors.Error {
+func (argument *Argument) CastTo(destType Type, context *Context) errors.Error {
 	var err errors.Error
-	argument.expression, err = argument.expression.CastTo(destType)
+	argument.expression, err = argument.expression.CastTo(destType, context)
 	return err
 }
 
@@ -106,4 +107,8 @@ func (function *Function) Fix(context *Context) errors.Error {
 	}
 
 	return function.block.Fix(context)
+}
+
+func (function *Function) Generate(executable *executable.Executable) ([]byte, errors.Error) {
+
 }

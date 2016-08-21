@@ -1,14 +1,14 @@
 package ast
 
 import (
-	"fmt"
 	"github.com/mlmhl/compiler/common"
 	"github.com/mlmhl/compiler/gstac/errors"
+	"github.com/mlmhl/compiler/gstac/executable"
 )
 
 type Statement interface {
 	Fix(context *Context) errors.Error
-	Generate()
+	Generate(executable *executable.Executable) ([]byte, errors.Error)
 }
 
 //
@@ -19,7 +19,7 @@ type UndefinedBlock struct {
 }
 
 func NewUndefinedBlock() *UndefinedBlock {
-	return &IfBlock{}
+	return &UndefinedBlock{}
 }
 
 type baseBlock struct {

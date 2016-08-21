@@ -28,7 +28,7 @@ func (identifier *Identifier) GetLocation() *common.Location {
 //
 // prototype of base types
 //
-const (
+var (
 	INTEGER_TYPE = &integerType{
 		baseType: baseType{
 			name: "int",
@@ -115,7 +115,7 @@ func (typ *integerType) isPriorityOfInteger() bool {
 	return false
 }
 
-func (typ *integerType) ifPriorityOfFloat() bool {
+func (typ *integerType) isPriorityOfFloat() bool {
 	return false
 }
 
@@ -139,7 +139,7 @@ func (typ *floatType) isPriorityOfInteger() bool {
 	return true
 }
 
-func (typ *floatType) ifPriorityOfFloat() bool {
+func (typ *floatType) isPriorityOfFloat() bool {
 	return false
 }
 
@@ -163,7 +163,7 @@ func (typ *stringType) isPriorityOfInteger() bool {
 	return true
 }
 
-func (typ *stringType) ifPriorityOfFloat() bool {
+func (typ *stringType) isPriorityOfFloat() bool {
 	return true
 }
 
@@ -187,7 +187,7 @@ func (typ *boolType) isPriorityOfInteger() bool {
 	return false
 }
 
-func (typ *boolType) ifPriorityOfFloat() bool {
+func (typ *boolType) isPriorityOfFloat() bool {
 	return false
 }
 
@@ -211,7 +211,7 @@ func (typ *nullType) isPriorityOfInteger() bool {
 	return false
 }
 
-func (typ *nullType) ifPriorityOfFloat() bool {
+func (typ *nullType) isPriorityOfFloat() bool {
 	return false
 }
 
@@ -232,7 +232,7 @@ func NewFunctionDeriveTag(paramList []Parameter) *FunctionDeriveTag {
 	tag := []byte{'('}
 
 	for _, parameter := range paramList {
-		tag = append(tag, []byte(parameter.GetType().GetName()))
+		tag = append(tag, parameter.GetType().GetName()...)
 		tag = append(tag, ',')
 	}
 
@@ -243,7 +243,7 @@ func NewFunctionDeriveTag(paramList []Parameter) *FunctionDeriveTag {
 	}
 
 	return &FunctionDeriveTag{
-		tag:       tag,
+		tag:       string(tag),
 		paramList: paramList,
 	}
 }
@@ -269,13 +269,13 @@ type DeriveType struct {
 }
 
 func NewDeriveType(base Type, deriveTags []DeriveTag) *DeriveType {
-	name := base.GetName()
+	name := []byte(base.GetName())
 	for _, tag := range deriveTags {
-		name = append(name, []byte(tag.GetTag()))
+		name = append(name, tag.GetTag()...)
 	}
 	return &DeriveType{
 		baseType: baseType{
-			name: name,
+			name: string(name),
 		},
 		base:       base,
 		deriveTags: deriveTags,
@@ -290,27 +290,27 @@ func (typ *DeriveType) IsDeriveType() bool {
 	return true
 }
 
-func (deriveType *DeriveType) isPriorityOf(typ Type) {
+func (deriveType *DeriveType) isPriorityOf(typ Type) bool {
 	panic("Can't invoke `isPriorityOf` on DeriveType")
 }
 
-func (deriveType *DeriveType) isPriorityOfNull() {
+func (deriveType *DeriveType) isPriorityOfNull() bool {
 	panic("Can't invoke `isPriorityOfNull` on DeriveType")
 }
 
-func (deriveType *DeriveType) isPriorityOfBool() {
+func (deriveType *DeriveType) isPriorityOfBool() bool {
 	panic("Can't invoke `isPriorityOfBool` on DeriveType")
 }
 
-func (deriveType *DeriveType) isPriorityOfInteger() {
+func (deriveType *DeriveType) isPriorityOfInteger() bool {
 	panic("Can't invoke `isPriorityOfInteger` on DeriveType")
 }
 
-func (deriveType *DeriveType) isPriorityOfFloat() {
+func (deriveType *DeriveType) isPriorityOfFloat() bool {
 	panic("Can't invoke `isPriorityOfFloat` on DeriveType")
 }
 
-func (deriveType *DeriveType) isPriorityOfString() {
+func (deriveType *DeriveType) isPriorityOfString() bool {
 	panic("Can't invoke `isPriorityOfString` on DeriveType")
 }
 
@@ -344,5 +344,5 @@ func (declaration *Declaration) GetLocation() *common.Location {
 
 func (declaration *Declaration) Fix(context *Context) {
 	declaration.initializer.Fix(context)
-	declaration.initializer.CastTo(declaration.typ)
+	declaration.initializer.CastTo(declaration.typ, context)
 }
