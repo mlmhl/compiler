@@ -969,7 +969,7 @@ func (compiler *Compiler) arrayCreationExpression(newTok *token.Token) ast.Expre
 			"Can't use `new` on basic type", newTok.GetLocation()))
 	}
 
-	return ast.NewArrayCreationExpression(typ, dimensions)
+	return ast.NewArrayCreationExpression(typ, dimensions, newTok.GetLocation())
 }
 
 func (compiler *Compiler) dimensionExpression(leftParentheses *token.Token) ast.Expression {

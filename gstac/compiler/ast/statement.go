@@ -8,7 +8,7 @@ import (
 
 type Statement interface {
 	Fix(context *Context) errors.Error
-	Generate(executable *executable.Executable) ([]byte, errors.Error)
+	Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error)
 }
 
 //

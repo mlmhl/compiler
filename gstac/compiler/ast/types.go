@@ -1,6 +1,11 @@
 package ast
 
-import "github.com/mlmhl/compiler/common"
+import (
+	"github.com/mlmhl/compiler/common"
+	"github.com/mlmhl/goutil/encoding"
+	"github.com/mlmhl/compiler/gstac/executable"
+	"github.com/mlmhl/compiler/gstac/errors"
+)
 
 //
 // identifier
@@ -59,6 +64,7 @@ var (
 type Type interface {
 	GetName() string
 	GetBaseType() Type
+	GetOffSet() int
 	Equal(other Type) bool
 	IsDeriveType() bool
 
@@ -79,6 +85,14 @@ func (typ *baseType) GetName() string {
 	return typ.name
 }
 
+func (typ *baseType) GetBaseType() Type {
+	panic("Can't invoke GetBaseType on this type")
+}
+
+func (typ *baseType) GetOffset() int {
+	panic("Can't invoke GetOffset on this type")
+}
+
 func (typ *baseType) Equal(other Type) bool {
 	return typ.name == other.GetName()
 }
@@ -95,12 +109,77 @@ func (typ *baseType) isPriorityOfString() bool {
 	return false
 }
 
+//
+// null type
+//
+type nullType struct {
+	baseType
+}
+
+func (typ *nullType) GetBaseType() Type {
+	return typ
+}
+
+func (typ *nullType) isPriorityOf(other Type) bool {
+	return other.isPriorityOfNull()
+}
+
+func (typ *nullType) isPriorityOfBool() bool {
+	return false
+}
+
+func (typ *nullType) isPriorityOfInteger() bool {
+	return false
+}
+
+func (typ *nullType) isPriorityOfFloat() bool {
+	return false
+}
+
+//
+// bool type
+//
+type boolType struct {
+	baseType
+}
+
+func (typ *boolType) GetBaseType() Type {
+	return typ
+}
+
+func (typ *boolType) GetOffset() int {
+	return 0
+}
+
+func (typ *boolType) isPriorityOf(other Type) bool {
+	return other.isPriorityOfBool()
+}
+
+func (typ *boolType) isPriorityOfBool() bool {
+	return false
+}
+
+func (typ *boolType) isPriorityOfInteger() bool {
+	return false
+}
+
+func (typ *boolType) isPriorityOfFloat() bool {
+	return false
+}
+
+//
+// integer type
+//
 type integerType struct {
 	baseType
 }
 
 func (typ *integerType) GetBaseType() Type {
 	return typ
+}
+
+func (typ *integerType) GetOffset() int {
+	return 1
 }
 
 func (typ *integerType) isPriorityOf(other Type) bool {
@@ -127,6 +206,10 @@ func (typ *floatType) GetBaseType() Type {
 	return typ
 }
 
+func (typ *floatType) GetOffset() int {
+	return 2
+}
+
 func (typ *floatType) isPriorityOf(other Type) bool {
 	return other.isPriorityOfFloat()
 }
@@ -151,6 +234,10 @@ func (typ *stringType) GetBaseType() Type {
 	return typ
 }
 
+func (typ *stringType) GetOffset() int {
+	return 3
+}
+
 func (typ *stringType) isPriorityOf(other Type) bool {
 	return other.isPriorityOfString()
 }
@@ -165,54 +252,6 @@ func (typ *stringType) isPriorityOfInteger() bool {
 
 func (typ *stringType) isPriorityOfFloat() bool {
 	return true
-}
-
-type boolType struct {
-	baseType
-}
-
-func (typ *boolType) GetBaseType() Type {
-	return typ
-}
-
-func (typ *boolType) isPriorityOf(other Type) bool {
-	return other.isPriorityOfBool()
-}
-
-func (typ *boolType) isPriorityOfBool() bool {
-	return false
-}
-
-func (typ *boolType) isPriorityOfInteger() bool {
-	return false
-}
-
-func (typ *boolType) isPriorityOfFloat() bool {
-	return false
-}
-
-type nullType struct {
-	baseType
-}
-
-func (typ *nullType) GetBaseType() Type {
-	return typ
-}
-
-func (typ *nullType) isPriorityOf(other Type) bool {
-	return other.isPriorityOfNull()
-}
-
-func (typ *nullType) isPriorityOfBool() bool {
-	return false
-}
-
-func (typ *nullType) isPriorityOfInteger() bool {
-	return false
-}
-
-func (typ *nullType) isPriorityOfFloat() bool {
-	return false
 }
 
 //
@@ -286,6 +325,10 @@ func (typ *DeriveType) GetBaseType() Type {
 	return typ.base
 }
 
+func (typ *DeriveType) GetOffset() {
+	return 3
+}
+
 func (typ *DeriveType) IsDeriveType() bool {
 	return true
 }
@@ -345,4 +388,23 @@ func (declaration *Declaration) GetLocation() *common.Location {
 func (declaration *Declaration) Fix(context *Context) {
 	declaration.initializer.Fix(context)
 	declaration.initializer.CastTo(declaration.typ, context)
+}
+
+func (declaration *Declaration) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
+	buffer := []byte{}
+
+	// generate location
+	buffer = append(buffer, declaration.location.Encode()...)
+
+	// generate variable name's index in symbol list
+	buffer = append(buffer, encoding.DefaultEncoder.Int(context.GetSymbolIndex(
+		declaration.identifier.GetName())))
+
+	// generate initializer
+	expressionCode, err := declaration.initializer.Generate(context)
+	if err != nil {
+		return nil, err
+	}
+	buffer = append(buffer, expressionCode...)
+	return buffer, nil
 }

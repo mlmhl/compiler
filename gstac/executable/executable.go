@@ -2,6 +2,7 @@ package executable
 
 import (
 	"github.com/mlmhl/compiler/gstac/errors"
+	"github.com/mlmhl/goutil/encoding"
 )
 
 type Executable struct {
@@ -10,6 +11,7 @@ type Executable struct {
 	codeByteBuffer *CodeByteBuffer
 
 	isFirstFunc bool
+	isFirstDeclaration bool
 }
 
 func NewExecutable() *Executable {
@@ -18,6 +20,7 @@ func NewExecutable() *Executable {
 		constantPool: NewConstantPool(),
 
 		isFirstFunc: true,
+		isFirstDeclaration: true,
 	}
 }
 
@@ -34,23 +37,24 @@ func (executable *Executable) AddSymbolList(code []byte) {
 	executable.codeByteBuffer.WriteSlice(code)
 }
 
-func (executable *Executable) BeginFunction() {
+// start write a list of some object to file
+func (executable *Executable) BeginList() {
 	executable.codeByteBuffer.Write('{')
-
 }
 
-func (executable *Executable) AddFunction(name string, code []byte) {
-	if executable.isFirstFunc {
-		executable.isFirstFunc = false
+// Add an element to the file, this method should be called after BeginList,
+// and can't be called an more after EndList.
+func (executable *Executable) AddElement(code []byte) {
+	if executable.isFirstDeclaration {
+		executable.isFirstDeclaration = false
 	} else {
 		executable.codeByteBuffer.Write(',')
 	}
-	executable.codeByteBuffer.WriteSlice([]byte(name))
-	executable.codeByteBuffer.Write(':')
 	executable.codeByteBuffer.WriteSlice(code)
 }
 
-func (executable *Executable) EndFunction() {
+// End write a list of some object to file
+func (executable *Executable) EndList() {
 	executable.codeByteBuffer.Write('}')
 }
 

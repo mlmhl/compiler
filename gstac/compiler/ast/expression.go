@@ -16,7 +16,7 @@ import (
 type Expression interface {
 	Fix(context *Context) (Expression, errors.Error)
 	CastTo(destType Type, context *Context) (Expression, errors.Error)
-	Generate(executable *executable.Executable) ([]byte, errors.Error)
+	Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error)
 
 	getType(context *Context) (Type, errors.Error)
 	getLocation() *common.Location
@@ -43,7 +43,7 @@ func (expression *baseExpression) CastTo(destType Type, context *Context) (Expre
 	return typeCast(srcType, destType, expression.this)
 }
 
-func (expression *baseExpression) Generate(executable *executable.Executable) ([]byte, errors.Error) {
+func (expression *baseExpression) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
 	// NO-OP
 	return nil, nil
 }
@@ -58,12 +58,38 @@ func (expression *baseExpression) getType(context *Context) (Type, errors.Error)
 
 type valueExpression interface {
 	getValue() interface{}
+
+	// support for code byte generation
+
+	// return according operation's code byte
+	// Normally return the constant in executable.code
+	operatorCode() byte
+
+	// return the value's code byte
+	valueEncode(exe *executable.Executable) []byte
 }
 
 type baseValueExpression struct {
 	baseExpression
 	typ      Type
 	location *common.Location
+}
+
+func (expression *baseValueExpression) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
+	buffer := []byte{}
+	valueExpression := expression.this.(valueExpression)
+
+	buffer = append(buffer, expression.location.Encode()...)
+	buffer = append(buffer, valueExpression.operatorCode())
+	buffer = append(buffer, valueExpression.valueEncode(exe)...)
+	return buffer, nil
+}
+
+// Default implement for all value expressions. Just store the
+// value in constant pool and encode the according index to code byte.
+func (expression *baseValueExpression) valueEncode(exe *executable.Executable) []byte {
+	return encoding.DefaultEncoder.Int(
+		exe.AddConstantValue(expression.this.(valueExpression).getValue()))
 }
 
 func (expression *baseValueExpression) getType(context *Context) (Type, errors.Error) {
@@ -93,6 +119,15 @@ func (expression *NullExpression) getValue() interface{} {
 	return nil
 }
 
+func (expression *NullExpression) operatorCode() byte {
+	return executable.PUSH_NULL
+}
+
+// Need't store null value
+func (expression *NullExpression) valueEncode() []byte {
+	return []byte{}
+}
+
 type BoolExpression struct {
 	baseValueExpression
 	value bool
@@ -110,19 +145,21 @@ func NewBoolExpression(value bool, location *common.Location) *BoolExpression {
 	return expression
 }
 
-func (expression *BoolExpression) Generate(exe *executable.Executable) ([]byte, errors.Error) {
-	buffer := []byte{}
-	buffer = append(buffer, expression.location.Encode()...)
-	if expression.value {
-		buffer = append(buffer, executable.PUSH_BOOL_TRUE)
-	} else {
-		buffer = append(buffer, executable.PUSH_BOOL_FALSE)
-	}
-	return buffer, nil
-}
-
 func (expression *BoolExpression) getValue() interface{} {
 	return expression.value
+}
+
+func (expression *BoolExpression) operatorCode() byte {
+	if expression.value {
+		return executable.PUSH_BOOL_TRUE
+	} else {
+		return executable.PUSH_BOOL_FALSE
+	}
+}
+
+// Needn't store bool value
+func (expression *BoolExpression) valueEncode() []byte {
+	return []byte{}
 }
 
 type IntegerExpression struct {
@@ -142,17 +179,12 @@ func NewIntegerExpression(value int64, location *common.Location) *IntegerExpres
 	return expression
 }
 
-func (expression *IntegerExpression) Generate(exe *executable.Executable) ([]byte, errors.Error) {
-	buffer := []byte{}
-	buffer = append(buffer, expression.location.Encode()...)
-	buffer = append(buffer, executable.PUSH_INT)
-	buffer = append(buffer, encoding.DefaultEncoder.Int(
-		exe.AddConstantValue(expression.value))...)
-	return buffer, nil
-}
-
 func (expression *IntegerExpression) getValue() interface{} {
 	return expression.value
+}
+
+func (expression *IntegerExpression) operatorCode() byte {
+	return executable.PUSH_INT
 }
 
 type FloatExpression struct {
@@ -172,17 +204,12 @@ func NewFloatExpression(value float64, location *common.Location) *FloatExpressi
 	return expression
 }
 
-func (expression *FloatExpression) Generate(exe *executable.Executable) ([]byte, errors.Error) {
-	buffer := []byte{}
-	buffer = append(buffer, expression.location.Encode()...)
-	buffer = append(buffer, executable.PUSH_FLOAT)
-	buffer = append(buffer, encoding.DefaultEncoder.Int(
-		exe.AddConstantValue(expression.value))...)
-	return buffer, nil
-}
-
 func (expression *FloatExpression) getValue() interface{} {
 	return expression.value
+}
+
+func (expression *FloatExpression) operatorCode() []byte {
+	return executable.PUSH_FLOAT
 }
 
 type StringExpression struct {
@@ -231,10 +258,17 @@ func (expression *StringExpression) getValue() interface{} {
 	return expression.value
 }
 
+func (expression *StringExpression) operatorCode() byte {
+	return executable.PUSH_STRING
+}
+
 // Literal array like int[] a = `{1, 2, 3}`
 type ArrayLiteralExpression struct {
 	baseExpression
 	values []Expression
+
+	// type according to array declaration
+	typ Type
 
 	// location of left large parentheses
 	location *common.Location
@@ -262,6 +296,7 @@ func (expression *ArrayLiteralExpression) Fix(context *Context) (Expression, err
 }
 
 func (expression *ArrayLiteralExpression) CastTo(destType Type, context *Context) (Expression, errors.Error) {
+	expression.typ = destType
 	var err errors.Error
 	for i, exp := range expression.values {
 		expression.values[i], err = exp.CastTo(destType, context)
@@ -272,10 +307,43 @@ func (expression *ArrayLiteralExpression) CastTo(destType Type, context *Context
 	return expression, nil
 }
 
+// Generate code byte for each array element expression
+// and generate array's size into ArrayLiteralExpression's code byte.
+func (expression *ArrayLiteralExpression) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
+	var buf []byte
+	var buffer []byte
+	var err errors.Error
+
+	// Generate code byte of array elements
+	for _, subExpr := range(expression.values) {
+		buf, err = subExpr.Generate(context, exe)
+		if err != nil {
+			return buffer, err
+		}
+		buffer = append(buffer, buf...)
+	}
+
+	// Generate code byte of ArrayLiteralExpression
+
+	buffer = append(buffer, expression.location.Encode()...)
+	// Generate is called after CastTo, so typ is already set to the correct value
+	buffer = append(buffer, executable.GetOperatorCode(
+		executable.NEW_ARRAY_LITERAL_BOOL, expression.typ.GetOffSet()))
+
+	return buffer, nil
+}
+
+// If typ is not set, getType will return a nil, but this doesn't matter,
+// as getType won't be called up to now.
+func (expression *ArrayLiteralExpression) getType(context *Context) (Type, errors.Error) {
+	return expression.typ
+}
+
 func (expression *ArrayLiteralExpression) getLocation() *common.Location {
 	return expression.location
 }
 
+// variable reference expression
 type IdentifierExpression struct {
 	baseExpression
 	identifier *Identifier
@@ -291,12 +359,18 @@ func NewIdentifierExpression(identifier *Identifier) *IdentifierExpression {
 	return expression
 }
 
-func (expression *IdentifierExpression) getLocation() *common.Location {
-	return expression.identifier.GetLocation()
+func (expression *IdentifierExpression) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
+	buffer := []byte{}
+
+	buffer = append(buffer, expression.getLocation().Encode()...)
+	buffer = append(buffer, executable.VARIABLE_REFERENCE)
+	buffer = append(buffer, encoding.DefaultEncoder.Int(context.GetSymbolIndex(expression.identifier.GetName())))
+
+	return buffer, nil
 }
 
-func (expression *IdentifierExpression) getIdentifier() *Identifier {
-	return expression.identifier
+func (expression *IdentifierExpression) getLocation() *common.Location {
+	return expression.identifier.GetLocation()
 }
 
 type assignExpression struct {
@@ -1592,6 +1666,7 @@ type ArrayCreationExpression struct {
 	baseType   Type
 	dimensions []Expression
 
+	// use location of keyword 'new' as the whole expression's location
 	location *common.Location
 
 	typ Type

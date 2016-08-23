@@ -20,12 +20,12 @@ func newSymbolList() *SymbolList {
 	}
 }
 
-// get symbol's index
+// Get symbol's index
 func (symbolList *SymbolList) Get(symbol string) int {
 	return symbolList.symbols.Get(symbol).(int)
 }
 
-// add a new symbol
+// Add a new symbol
 func (symbolList *SymbolList) Put(symbol string) {
 	symbolList.symbols.Put(symbol, symbolList.symbols.Size())
 }
@@ -82,6 +82,7 @@ func (context *Context) IsGlobal() bool {
 	return context.outContext != nil
 }
 
+// Get declaration according to variable name
 func (context *Context) GetVariable(name string) *Declaration {
 	if context.variables == nil {
 		return nil
@@ -97,6 +98,7 @@ func (context *Context) GetVariable(name string) *Declaration {
 	}
 }
 
+// Get function definition according to identifier name
 func (context *Context) GetFunction(name string) *Function {
 	if context.functions == nil {
 		return nil
@@ -112,10 +114,21 @@ func (context *Context) GetFunction(name string) *Function {
 	}
 }
 
+// Get the whole symbol list
 func (context *Context) GetSymbolList() *SymbolList {
 	return context.symbolList
 }
 
+// Get the whole variables
+func (context *Context) GetDeclarationList() []*Declaration {
+	declarations := []*Declaration{}
+	for _, v := range(context.variables.ValueSet()) {
+		declarations = append(declarations, v.(*Declaration))
+	}
+	return declarations
+}
+
+// Get the whole functions
 func (context *Context) GetFunctionList() []*Function {
 	functions := []*Function{}
 	for _, v := range(context.functions.ValueSet()) {
@@ -124,8 +137,14 @@ func (context *Context) GetFunctionList() []*Function {
 	return functions
 }
 
+// Get the outside function definition for function scope context
 func (context *Context) GetOutFunctionDefinition() *Function {
 	return context.outFunction
+}
+
+// Get index of a concrete symbol
+func (context *Context) GetSymbolIndex(symbol string) int {
+	return context.symbolList.Get(symbol)
 }
 
 func (context *Context) AddVariable(name string, declaration *Declaration) errors.Error {

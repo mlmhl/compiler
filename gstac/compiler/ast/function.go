@@ -109,6 +109,6 @@ func (function *Function) Fix(context *Context) errors.Error {
 	return function.block.Fix(context)
 }
 
-func (function *Function) Generate(executable *executable.Executable) ([]byte, errors.Error) {
+func (function *Function) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
 
 }
