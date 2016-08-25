@@ -208,7 +208,7 @@ func (expression *FloatExpression) getValue() interface{} {
 	return expression.value
 }
 
-func (expression *FloatExpression) operatorCode() []byte {
+func (expression *FloatExpression) operatorCode() byte {
 	return executable.PUSH_FLOAT
 }
 
@@ -315,7 +315,7 @@ func (expression *ArrayLiteralExpression) Generate(context *Context, exe *execut
 	var err errors.Error
 
 	// Generate code byte of array elements
-	for _, subExpr := range(expression.values) {
+	for _, subExpr := range expression.values {
 		buf, err = subExpr.Generate(context, exe)
 		if err != nil {
 			return buffer, err
@@ -328,7 +328,7 @@ func (expression *ArrayLiteralExpression) Generate(context *Context, exe *execut
 	buffer = append(buffer, expression.location.Encode()...)
 	// Generate is called after CastTo, so typ is already set to the correct value
 	buffer = append(buffer, executable.GetOperatorCode(
-		executable.NEW_ARRAY_LITERAL_BOOL, expression.typ.GetOffSet()))
+		executable.NEW_ARRAY_LITERAL_BOOL, expression.typ.GetOffset()))
 
 	return buffer, nil
 }
@@ -336,7 +336,7 @@ func (expression *ArrayLiteralExpression) Generate(context *Context, exe *execut
 // If typ is not set, getType will return a nil, but this doesn't matter,
 // as getType won't be called up to now.
 func (expression *ArrayLiteralExpression) getType(context *Context) (Type, errors.Error) {
-	return expression.typ
+	return expression.typ, nil
 }
 
 func (expression *ArrayLiteralExpression) getLocation() *common.Location {
@@ -359,21 +359,35 @@ func NewIdentifierExpression(identifier *Identifier) *IdentifierExpression {
 	return expression
 }
 
-func (expression *IdentifierExpression) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
+func (expression *IdentifierExpression) Generate(context *Context,
+	exe *executable.Executable) ([]byte, errors.Error) {
 	buffer := []byte{}
 
 	buffer = append(buffer, expression.getLocation().Encode()...)
 	buffer = append(buffer, executable.VARIABLE_REFERENCE)
-	buffer = append(buffer, encoding.DefaultEncoder.Int(context.GetSymbolIndex(expression.identifier.GetName())))
+	buffer = append(buffer, encoding.DefaultEncoder.Int(
+		context.GetSymbolIndex(expression.identifier.GetName()))...)
 
 	return buffer, nil
+}
+
+func (expression *IdentifierExpression) getType(context *Context) (Type, errors.Error) {
+	return context.GetVariable(expression.identifier.GetName()).GetType(), nil
 }
 
 func (expression *IdentifierExpression) getLocation() *common.Location {
 	return expression.identifier.GetLocation()
 }
 
-type assignExpression struct {
+type assignExpressionInterface interface {
+	// If return true, push left operand's value to stack
+	isLeftNeedPush() bool
+
+	// Return the operator code according to content assign expression
+	getOperatorCode(typ Type) byte
+}
+
+type baseAssignExpression struct {
 	baseExpression
 	left    Expression
 	operand Expression
@@ -381,69 +395,106 @@ type assignExpression struct {
 	// use left expression's location as the whole expression's location
 }
 
+func (expression *baseAssignExpression) isLeftNeedPush() bool {
+	return true
+}
+
 type NormalAssignExpression struct {
-	assignExpression
+	baseAssignExpression
+}
+
+func (expression *NormalAssignExpression) isLeftNeedPush() bool {
+	return false
+}
+
+func (expression *NormalAssignExpression) getOperatorCode(context *Context) (byte, errors.Error) {
+	return executable.NORMAL_ASSIGN, nil
 }
 
 type AddAssignExpression struct {
-	assignExpression
+	baseAssignExpression
+}
+
+func (expression *AddAssignExpression) getOperatorCode(typ Type) byte {
+	// Add operation doesn't support 'null', so 'bool' is the start type.
+	return executable.GetOperatorCode(executable.ADD_BOOL, typ.GetOffset()-1)
 }
 
 type SubtractAssignExpression struct {
-	assignExpression
+	baseAssignExpression
+}
+
+func (expression *SubtractExpression) getOperatorCode(typ Type) byte {
+	// Add operation doesn't support 'null' and 'bool', so 'int' is the start type.
+	return executable.GetOperatorCode(executable.SUBTRACT_INT, typ.GetOffset()-2)
 }
 
 type MultiplyAssignExpression struct {
-	assignExpression
+	baseAssignExpression
+}
+
+func (expression *MultiplyAssignExpression) getOperatorCode(typ Type) byte {
+	// Add operation doesn't support 'null' and 'bool', so 'int' is the start type.
+	return executable.GetOperatorCode(executable.MULTIPLY_INT, typ.GetOffset()-2)
 }
 
 type DivideAssignExpression struct {
-	assignExpression
+	baseAssignExpression
+}
+
+func (expression *DivideAssignExpression) getOperatorCode(typ Type) byte {
+	// Add operation doesn't support 'null' and 'bool', so 'int' is the start type.
+	return executable.GetOperatorCode(executable.DIVIDE_INT, typ.GetOffset()-2)
 }
 
 type ModAssignExpression struct {
-	assignExpression
+	baseAssignExpression
+}
+
+func (expression *ModAssignExpression) getOperatorCode(typ Type) byte {
+	// Add operation doesn't support 'null' and 'bool', so 'int' is the start type.
+	return executable.MOD_INT
 }
 
 func NewAssignExpression(typ int, left, operand Expression) Expression {
-	expression := assignExpression{
+	expression := baseAssignExpression{
 		left:    left,
 		operand: operand,
 	}
 	switch typ {
 	case token.ASSIGN_ID:
 		result := &NormalAssignExpression{
-			assignExpression: expression,
+			baseAssignExpression: expression,
 		}
 		result.this = result
 		return result
 	case token.ADD_ASSIGN_ID:
 		result := &AddAssignExpression{
-			assignExpression: expression,
+			baseAssignExpression: expression,
 		}
 		result.this = result
 		return result
 	case token.SUBTRACT_ID:
 		result := &SubtractAssignExpression{
-			assignExpression: expression,
+			baseAssignExpression: expression,
 		}
 		result.this = result
 		return result
 	case token.MUL_ASSIGN_ID:
 		result := &MultiplyAssignExpression{
-			assignExpression: expression,
+			baseAssignExpression: expression,
 		}
 		result.this = result
 		return result
 	case token.DIV_ASSIGN_ID:
 		result := &DivideAssignExpression{
-			assignExpression: expression,
+			baseAssignExpression: expression,
 		}
 		result.this = result
 		return result
 	case token.MOD_ASSIGN_ID:
 		result := &ModAssignExpression{
-			assignExpression: expression,
+			baseAssignExpression: expression,
 		}
 		result.this = result
 		return result
@@ -452,7 +503,7 @@ func NewAssignExpression(typ int, left, operand Expression) Expression {
 	}
 }
 
-func (expression *assignExpression) Fix(context *Context) (Expression, errors.Error) {
+func (expression *baseAssignExpression) Fix(context *Context) (Expression, errors.Error) {
 	var err errors.Error
 	expression.left, err = expression.left.Fix(context)
 	if err != nil {
@@ -470,11 +521,86 @@ func (expression *assignExpression) Fix(context *Context) (Expression, errors.Er
 	return expression, err
 }
 
-func (expression *assignExpression) getType(context *Context) (Type, errors.Error) {
+func (expression *baseAssignExpression) Generate(context *Context,
+	exe *executable.Executable) ([]byte, errors.Error) {
+	var (
+		code []byte
+		err  errors.Error
+	)
+
+	buffer := []byte{}
+	expr := expression.this.(assignExpressionInterface)
+
+	// put left operand's code if needed
+	if expr.isLeftNeedPush() {
+		code, err = expression.left.Generate(context, exe)
+		if err != nil {
+			return nil, err
+		}
+		buffer = append(buffer, code...)
+	}
+
+	// put right operand's code
+	code, err = expression.operand.Generate(context, exe)
+	if err != nil {
+		return nil, err
+	}
+	buffer = append(buffer, code...)
+
+	// write this assign expression
+	buffer = append(buffer, expression.getLocation().Encode()...)
+	typ, err := expression.getType(context)
+	if err != nil {
+		return nil, err
+	}
+	buffer = append(buffer, expr.getOperatorCode(typ))
+
+	// support for "a=b=c"
+	if !context.IsGlobal() {
+		buffer = append(buffer, executable.STACK_TOP_DUPLICATE)
+	}
+	buffer = append(buffer)
+
+	code, err = expression.popToLeftValue(context, exe)
+	if err != nil {
+		return nil, err
+	}
+	buffer = append(buffer, code...)
+
+	return buffer, nil
+}
+
+// Pop stack top value into a left value
+func (expression *baseAssignExpression) popToLeftValue(context *Context,
+	exe *executable.Executable) ([]byte, errors.Error) {
+	buffer := []byte{}
+	buffer = append(buffer, expression.getLocation().Encode()...)
+
+	var (
+		code []byte
+		err  errors.Error
+	)
+
+	switch expr := expression.left.(type) {
+	case *IdentifierExpression:
+		code, err = popToIdentifier(expr, context, exe)
+	case *IndexExpression:
+		code, err = popToArrayIndex(expr, context, exe)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	buffer = append(buffer, code...)
+
+	return buffer, nil
+}
+
+func (expression *baseAssignExpression) getType(context *Context) (Type, errors.Error) {
 	return expression.left.getType(context)
 }
 
-func (expression *assignExpression) getLocation() *common.Location {
+func (expression *baseAssignExpression) getLocation() *common.Location {
 	return expression.left.getLocation()
 }
 
@@ -1796,4 +1922,48 @@ func floatTypeCast(destType Type, operand Expression) (Expression, errors.Error)
 
 func stringTypeCast(destType Type, operand Expression) (Expression, errors.Error) {
 	return nil, errors.NewTypeCastError(STRING_TYPE.GetName(), destType.GetName(), operand.getLocation())
+}
+
+// Pop stack top value into a variable
+func popToIdentifier(expression *IdentifierExpression, context *Context,
+	exe *executable.Executable) ([]byte, errors.Error) {
+	typ, err := expression.getType(context)
+	if err != nil {
+		return nil, err
+	}
+	var start byte
+	if context.IsGlobal() {
+		start = executable.POP_STATIC_BOOL
+	} else {
+		start = executable.POP_STACK_BOOL
+	}
+	// Int is the first supported type for pop stack operation
+	return []byte{append(executable.GetOperatorCode(start, typ.GetOffset()-2))}
+}
+
+// Pop stack top value into array index
+func popToArrayIndex(expression *IndexExpression, context *Context,
+	exe *executable.Executable) ([]byte, errors.Error) {
+	buffer := []byte{}
+
+	var (
+		code []byte
+		err  errors.Error
+	)
+
+	if code, err = expression.array.Generate(context, exe); err != nil {
+		return nil, err
+	} else {
+		buffer = append(buffer, code...)
+	}
+
+	if code, err = expression.index.Generate(context, exe); err != nil {
+		return nil, err
+	} else {
+		buffer = append(buffer, code...)
+	}
+
+	buffer = append(buffer, executable.POP_ARRAY_BOOL)
+
+	return buffer, nil
 }

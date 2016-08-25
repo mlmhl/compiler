@@ -2,7 +2,6 @@ package executable
 
 import (
 	"github.com/mlmhl/compiler/gstac/errors"
-	"github.com/mlmhl/goutil/encoding"
 )
 
 type Executable struct {

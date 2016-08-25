@@ -64,7 +64,7 @@ var (
 type Type interface {
 	GetName() string
 	GetBaseType() Type
-	GetOffSet() int
+	GetOffset() int
 	Equal(other Type) bool
 	IsDeriveType() bool
 
@@ -379,6 +379,10 @@ func NewDeclaration(typ Type, identifier *Identifier, initializer Expression,
 
 func (declaration *Declaration) GetName() string {
 	return declaration.identifier.GetName()
+}
+
+func (declaration *Declaration) GetType() Type {
+	return declaration.typ
 }
 
 func (declaration *Declaration) GetLocation() *common.Location {

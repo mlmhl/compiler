@@ -37,7 +37,7 @@ func (location *Location) Equal(other *Location) bool {
 // Encode encode the line and position to code byte
 func (location *Location) Encode() []byte {
 	buffer := encoding.DefaultEncoder.Int(location.line)
-	buffer = append(buffer, location.position)
+	buffer = append(buffer, encoding.DefaultEncoder.Int(location.position)...)
 	return buffer
 }
 
