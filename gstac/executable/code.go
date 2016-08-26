@@ -43,6 +43,36 @@ const (
 	// Mod operator
 	MOD_INT
 
+	// Equal operator
+	EQUAL_BOOL
+	EQUAL_INT
+	EQUAL_FLOAT
+	EQUAL_STRING
+	EQUAL_NULL
+
+	//Unequal operator
+	NOT_EQUAL_BOOL
+	NOT_EQUAL_INT
+	NOT_EQUAL_FLOAT
+	NOT_EQUAL_STRING
+	NOT_EQUAL_NULL
+
+	// Greater than operator
+	GREATER_THAN_INT
+	GREATER_THAN_FLOAT
+
+	// Greater than and equal operator
+	GREATER_THAN_OR_EQUAL_INT
+	GREATER_THAN_OR_EQUAL_FLOAT
+
+	// Less than operator
+	LESS_THAN_INT
+	LESS_THAN_FLOAT
+
+	// Less than or equal operator
+	LESS_THAN_OR_EQUAL_INT
+	LESS_THAN_OR_EQUAL_FLOAT
+
 	// Support for continuous assignment like 'a=b=c'
 	STACK_TOP_DUPLICATE
 

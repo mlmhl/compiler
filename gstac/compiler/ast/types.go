@@ -64,7 +64,14 @@ var (
 type Type interface {
 	GetName() string
 	GetBaseType() Type
+
+	// 0: bool
+	// 1: float
+	// 2: float
+	// 3: object(string, array)
+	// 4 : null
 	GetOffset() int
+
 	Equal(other Type) bool
 	IsDeriveType() bool
 
@@ -118,6 +125,10 @@ type nullType struct {
 
 func (typ *nullType) GetBaseType() Type {
 	return typ
+}
+
+func(typ *nullType) GetOffset() int {
+	return 4
 }
 
 func (typ *nullType) isPriorityOf(other Type) bool {

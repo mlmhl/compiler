@@ -416,17 +416,16 @@ type AddAssignExpression struct {
 }
 
 func (expression *AddAssignExpression) getOperatorCode(typ Type) byte {
-	// Add operation doesn't support 'null', so 'bool' is the start type.
-	return executable.GetOperatorCode(executable.ADD_BOOL, typ.GetOffset()-1)
+	return executable.GetOperatorCode(executable.ADD_BOOL, typ.GetOffset())
 }
 
 type SubtractAssignExpression struct {
 	baseAssignExpression
 }
 
-func (expression *SubtractExpression) getOperatorCode(typ Type) byte {
-	// Add operation doesn't support 'null' and 'bool', so 'int' is the start type.
-	return executable.GetOperatorCode(executable.SUBTRACT_INT, typ.GetOffset()-2)
+func (expression *SubtractAssignExpression) getOperatorCode(typ Type) byte {
+	// Add operation doesn't support 'bool', so 'int' is the start type.
+	return executable.GetOperatorCode(executable.SUBTRACT_INT, typ.GetOffset()-1)
 }
 
 type MultiplyAssignExpression struct {
@@ -434,8 +433,8 @@ type MultiplyAssignExpression struct {
 }
 
 func (expression *MultiplyAssignExpression) getOperatorCode(typ Type) byte {
-	// Add operation doesn't support 'null' and 'bool', so 'int' is the start type.
-	return executable.GetOperatorCode(executable.MULTIPLY_INT, typ.GetOffset()-2)
+	// Add operation doesn't support 'bool', so 'int' is the start type.
+	return executable.GetOperatorCode(executable.MULTIPLY_INT, typ.GetOffset()-1)
 }
 
 type DivideAssignExpression struct {
@@ -443,8 +442,8 @@ type DivideAssignExpression struct {
 }
 
 func (expression *DivideAssignExpression) getOperatorCode(typ Type) byte {
-	// Add operation doesn't support 'null' and 'bool', so 'int' is the start type.
-	return executable.GetOperatorCode(executable.DIVIDE_INT, typ.GetOffset()-2)
+	// Add operation doesn't support and 'bool', so 'int' is the start type.
+	return executable.GetOperatorCode(executable.DIVIDE_INT, typ.GetOffset()-1)
 }
 
 type ModAssignExpression struct {
@@ -606,10 +605,11 @@ func (expression *baseAssignExpression) getLocation() *common.Location {
 
 type binaryExpression interface {
 	execute(left, right interface{}, location *common.Location) (Expression, errors.Error)
+	getOperatorCode(typ Type) byte
 }
 
 type baseBinaryExpression struct {
-	this  binaryExpression
+	this  Expression
 	left  Expression
 	right Expression
 
@@ -631,7 +631,7 @@ func (expression *baseBinaryExpression) Fix(context *Context) (Expression, error
 	l, lok := expression.left.(valueExpression)
 	r, rok := expression.right.(valueExpression)
 	if lok && rok {
-		return expression.this.execute(l.getValue(), r.getValue(), expression.left.getLocation())
+		return expression.this.(binaryExpression).execute(l.getValue(), r.getValue(), expression.left.getLocation())
 	}
 
 	var leftType Type
@@ -669,6 +669,35 @@ func (expression *baseBinaryExpression) CastTo(destType Type, context *Context) 
 		srcType = rightType
 	}
 	return typeCast(srcType, destType, expression)
+}
+
+func (expression *baseBinaryExpression) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
+	buffer := []byte{}
+
+	var (
+		typ  Type
+		code []byte
+		err  errors.Error
+	)
+
+	if code, err = expression.left.Generate(context, exe); err != nil {
+		return nil, err
+	}
+	buffer = append(buffer, code...)
+
+	if code, err = expression.right.Generate(context, exe); err != nil {
+		return nil, err
+	}
+	buffer = append(buffer, code...)
+
+	// Generate the operator
+	if typ, err = expression.this.getType(context); err != nil {
+		return nil, err
+	} else {
+		buffer = append(buffer, expression.this.(binaryExpression).getOperatorCode(typ))
+	}
+
+	return buffer, nil
 }
 
 func (expression *baseBinaryExpression) getType(context *Context) (Type, errors.Error) {
@@ -785,6 +814,10 @@ func (expression *AddExpression) execute(left, right interface{},
 	}
 }
 
+func (expression *AddExpression) getOperatorCode(typ Type) byte {
+	return executable.GetOperatorCode(executable.ADD_BOOL, typ.GetOffset())
+}
+
 type SubtractExpression struct {
 	baseBinaryExpression
 }
@@ -831,6 +864,11 @@ func (expression *SubtractExpression) execute(left, right interface{},
 		return nil, errors.NewInvalidOperationError(tag, location,
 			reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
+}
+
+func (expression *SubtractExpression) getOperatorCode(typ Type) byte {
+	// For subtract operator, Int is the start type
+	return executable.GetOperatorCode(executable.SUBTRACT_INT, typ.GetOffset()-1)
 }
 
 type MultiplyExpression struct {
@@ -881,6 +919,10 @@ func (expression *MultiplyExpression) execute(left, right interface{},
 	}
 }
 
+func (expression *MultiplyExpression) getOperatorCode(typ Type) byte {
+	return executable.GetOperatorCode(executable.MULTIPLY_INT, typ.GetOffset()-1)
+}
+
 type DivideExpression struct {
 	baseBinaryExpression
 }
@@ -928,6 +970,10 @@ func (expression *DivideExpression) execute(left, right interface{},
 	}
 }
 
+func (expression *DivideExpression) getOperatorCode(typ Type) byte {
+	return executable.GetOperatorCode(executable.DIVIDE_INT, typ.GetOffset()-1)
+}
+
 type ModExpression struct {
 	baseBinaryExpression
 }
@@ -962,6 +1008,10 @@ func (expression *ModExpression) execute(left, right interface{},
 		return nil, errors.NewInvalidOperationError(tag, location,
 			reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
+}
+
+func (expression *ModExpression) getOperatorCode(typ Type) byte {
+	return executable.MOD_INT
 }
 
 type EqualExpression struct {
@@ -1028,6 +1078,10 @@ func (expression *EqualExpression) execute(left, right interface{},
 	}
 }
 
+func (expression *EqualExpression) getOperatorCode(typ Type) byte {
+	return executable.GetOperatorCode(executable.EQUAL_BOOL, typ.GetOffset())
+}
+
 type NotEqualExpression struct {
 	baseBinaryExpression
 }
@@ -1092,6 +1146,10 @@ func (expression *NotEqualExpression) execute(left, right interface{},
 	}
 }
 
+func (expression *NotEqualExpression) getOperatorCode(typ Type) byte {
+	return executable.GetOperatorCode(executable.NOT_EQUAL_BOOL, typ.GetOffset())
+}
+
 type GreaterThanExpression struct {
 	baseBinaryExpression
 }
@@ -1139,12 +1197,16 @@ func (expression *GreaterThanExpression) execute(left, right interface{},
 	}
 }
 
-type GreaterThanAndEqualExpression struct {
+func (expression *GreaterThanExpression) getOperatorCode(typ Type) byte {
+	return executable.GetOperatorCode(executable.GREATER_THAN_INT, typ.GetOffset()-1)
+}
+
+type GreaterThanOrEqualExpression struct {
 	baseBinaryExpression
 }
 
-func NewGreaterThanAndEqualExpression(left, right Expression) *GreaterThanAndEqualExpression {
-	expression := &GreaterThanAndEqualExpression{
+func NewGreaterThanAndEqualExpression(left, right Expression) *GreaterThanOrEqualExpression {
+	expression := &GreaterThanOrEqualExpression{
 		baseBinaryExpression: baseBinaryExpression{
 			left:  left,
 			right: right,
@@ -1154,7 +1216,7 @@ func NewGreaterThanAndEqualExpression(left, right Expression) *GreaterThanAndEqu
 	return expression
 }
 
-func (expression *GreaterThanAndEqualExpression) execute(left, right interface{},
+func (expression *GreaterThanOrEqualExpression) execute(left, right interface{},
 	location *common.Location) (Expression, errors.Error) {
 	tag := "GRETER_THAN"
 
@@ -1184,6 +1246,10 @@ func (expression *GreaterThanAndEqualExpression) execute(left, right interface{}
 	default:
 		return nil, errors.NewInvalidOperationError(tag, location, reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
+}
+
+func (expression *GreaterThanOrEqualExpression) getOperatorCode(typ Type) byte {
+	return executable.GetOperatorCode(executable.GREATER_THAN_OR_EQUAL_INT, typ.GetOffset()-1)
 }
 
 type LessThanExpression struct {
@@ -1234,12 +1300,16 @@ func (expression *LessThanExpression) execute(left, right interface{},
 	}
 }
 
-type LessThanAndEqualExpression struct {
+func (expression *LessThanExpression) getOperatorCode(typ Type) byte {
+	return executable.GetOperatorCode(executable.LESS_THAN_INT, typ.GetOffset()-1)
+}
+
+type LessThanOrEqualExpression struct {
 	baseBinaryExpression
 }
 
-func NewLessThanAndEqualExpression(left, right Expression) *LessThanAndEqualExpression {
-	expression := &LessThanAndEqualExpression{
+func NewLessThanAndEqualExpression(left, right Expression) *LessThanOrEqualExpression {
+	expression := &LessThanOrEqualExpression{
 		baseBinaryExpression: baseBinaryExpression{
 			left:  left,
 			right: right,
@@ -1249,7 +1319,7 @@ func NewLessThanAndEqualExpression(left, right Expression) *LessThanAndEqualExpr
 	return expression
 }
 
-func (expression *LessThanAndEqualExpression) execute(left, right interface{},
+func (expression *LessThanOrEqualExpression) execute(left, right interface{},
 	location *common.Location) (Expression, errors.Error) {
 	tag := "LESS_THAN"
 
@@ -1282,6 +1352,10 @@ func (expression *LessThanAndEqualExpression) execute(left, right interface{},
 	}
 }
 
+func (expression *LessThanOrEqualExpression) getOperatorCode(typ Type) byte {
+	return executable.GetOperatorCode(executable.LESS_THAN_OR_EQUAL_INT, typ.GetOffset()-1)
+}
+
 type LogicalOrExpression struct {
 	baseBinaryExpression
 }
@@ -1308,6 +1382,10 @@ func (expression *LogicalOrExpression) execute(left, right interface{},
 		return nil, errors.NewInvalidOperationError("LOGICAL_AND", location,
 			reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
+}
+
+func (expression *LogicalOrExpression) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
+
 }
 
 type LogicalAndExpression struct {
@@ -1938,7 +2016,7 @@ func popToIdentifier(expression *IdentifierExpression, context *Context,
 		start = executable.POP_STACK_BOOL
 	}
 	// Int is the first supported type for pop stack operation
-	return []byte{append(executable.GetOperatorCode(start, typ.GetOffset()-2))}
+	return []byte{append(executable.GetOperatorCode(start, typ.GetOffset()-1))}
 }
 
 // Pop stack top value into array index
