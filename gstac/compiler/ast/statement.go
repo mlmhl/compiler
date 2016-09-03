@@ -4,23 +4,17 @@ import (
 	"github.com/mlmhl/compiler/common"
 	"github.com/mlmhl/compiler/gstac/errors"
 	"github.com/mlmhl/compiler/gstac/executable"
+	"github.com/mlmhl/goutil/encoding"
 )
 
 type Statement interface {
 	Fix(context *Context) errors.Error
-	Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error)
+	Generate(context *Context, exe *executable.Executable) errors.Error
 }
 
 //
 // block
 //
-
-type UndefinedBlock struct {
-}
-
-func NewUndefinedBlock() *UndefinedBlock {
-	return &UndefinedBlock{}
-}
 
 type baseBlock struct {
 	statements []Statement
@@ -29,6 +23,15 @@ type baseBlock struct {
 func (block *baseBlock) Fix(context *Context) errors.Error {
 	for _, statement := range block.statements {
 		if err := statement.Fix(context); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (block *baseBlock) Generate(context *Context, exe *executable.Executable) errors.Error {
+	for _, statement := range block.statements {
+		if err := statement.Generate(context, exe); err != nil {
 			return err
 		}
 	}
@@ -119,6 +122,30 @@ func (elifStatement *ElifStatement) Fix(context *Context) errors.Error {
 		context, context.GetOutFunctionDefinition()))
 }
 
+func (elifStatement *ElifStatement) Generate(endLabel int, context *Context, exe *executable.Executable) errors.Error {
+	var err errors.Error
+
+	exe.AppendSlice(elifStatement.location.Encode())
+
+	if err = elifStatement.condition.Generate(context, exe); err != nil {
+		return err
+	}
+
+	ifFalseLabel := exe.NewLabel()
+	exe.Append(executable.JUMP_IF_FALSE)
+	exe.AppendSlice(encoding.DefaultEncoder.Int(ifFalseLabel))
+
+	if err = elifStatement.block.Generate(context, exe); err != nil {
+		return err
+	}
+	exe.Append(executable.JUMP)
+	exe.AppendSlice(encoding.DefaultEncoder.Int(endLabel))
+
+	exe.SetLabel(ifFalseLabel, exe.GetSize())
+
+	return nil
+}
+
 type ElseStatement struct {
 	block *IfBlock
 
@@ -136,6 +163,11 @@ func NewElseStatement(block *IfBlock, location *common.Location) *ElseStatement 
 func (elseStatement *ElseStatement) Fix(context *Context) errors.Error {
 	return elseStatement.block.Fix(NewContext(context.GetSymbolList(),
 		context, context.GetOutFunctionDefinition()))
+}
+
+func (elseStatement *ElseStatement) Generate(context *Context, exe *executable.Executable) errors.Error {
+	exe.AppendSlice(elseStatement.location.Encode())
+	return elseStatement.block.Generate(context, exe)
 }
 
 type IfStatement struct {
@@ -189,6 +221,42 @@ func (ifStatement *IfStatement) Fix(context *Context) errors.Error {
 	}
 
 	return ifStatement.elseStatement.Fix(context)
+}
+
+func (ifStatement *IfStatement) Generate(context *Context, exe *executable.Executable) errors.Error {
+	var err errors.Error
+
+	exe.AppendSlice(ifStatement.location.Encode())
+
+	if err = ifStatement.condition.Generate(context, exe); err != nil {
+		return err
+	}
+
+	ifFalseLabel := exe.NewLabel()
+	exe.Append(executable.JUMP_IF_FALSE)
+	exe.AppendSlice(encoding.DefaultEncoder.Int(ifFalseLabel))
+
+	if err = ifStatement.ifBlock.Generate(context, exe); err != nil {
+		return err
+	}
+
+	endLabel := exe.NewLabel()
+
+	exe.Append(executable.JUMP)
+	exe.AppendSlice(encoding.DefaultEncoder.Int(endLabel))
+
+	exe.SetLabel(ifFalseLabel, exe.GetSize())
+
+	for _, elifStatement := range(ifStatement.elifStatements) {
+		if err = elifStatement.Generate(endLabel, context, exe); err != nil {
+			return err
+		}
+	}
+
+	ifStatement.elseStatement.Generate(context, exe)
+	exe.SetLabel(endLabel, exe.GetSize())
+
+	return nil
 }
 
 //
@@ -249,6 +317,59 @@ func (forStatement *ForStatement) Fix(context *Context) errors.Error {
 		context, context.GetOutFunctionDefinition()))
 }
 
+func (forStatement *ForStatement) Generate(context *Context, exe *executable.Executable) errors.Error {
+	var err errors.Error
+
+	exe.AppendSlice(forStatement.location.Encode())
+
+	if forStatement.init != nil {
+		if err = forStatement.init.Generate(context, exe); err != nil {
+			return err
+		}
+	}
+
+	startLabel := exe.NewLabel()
+	exe.SetLabel(startLabel, exe.GetSize())
+
+	// endLabel is also the breakLabel
+	endLabel := exe.NewLabel()
+	exe.SetBreakLabel(endLabel)
+	defer exe.ResetBreakLabel()
+
+	if forStatement.condition != nil {
+		if err = forStatement.condition.Generate(context, exe); err != nil {
+			return err
+		}
+		exe.Append(executable.JUMP_IF_FALSE)
+		exe.AppendSlice(encoding.DefaultEncoder.Int(endLabel))
+	}
+
+	continueLabel := exe.NewLabel()
+	exe.SetContinueLabel(continueLabel)
+	defer exe.ResetContinueLabel()
+
+	if forStatement.block != nil {
+		if err = forStatement.block.Generate(context, exe); err != nil {
+			return err
+		}
+	}
+
+	exe.SetLabel(continueLabel, exe.GetSize())
+
+	if forStatement.post != nil {
+		if err = forStatement.post.Generate(context, exe); err != nil {
+			return err
+		}
+	}
+
+	exe.Append(executable.JUMP)
+	exe.AppendSlice(encoding.DefaultEncoder.Int(startLabel))
+
+	exe.SetLabel(endLabel, exe.GetSize())
+
+	return nil
+}
+
 //
 // while statement
 //
@@ -282,6 +403,43 @@ func (whileStatement *WhileStatement) Fix(context *Context) errors.Error {
 		context, context.GetOutFunctionDefinition()))
 }
 
+func (whileStatement *WhileStatement) Generate(context *Context, exe *executable.Executable) errors.Error {
+	var err errors.Error
+
+	exe.AppendSlice(whileStatement.location.Encode())
+
+	startLabel := exe.NewLabel()
+	exe.SetLabel(startLabel, exe.GetSize())
+
+	// endLabel is also the breakLabel
+	endLabel := exe.NewLabel()
+	exe.SetBreakLabel(endLabel)
+	defer exe.ResetBreakLabel()
+
+	if err = whileStatement.condition.Generate(context, exe); err != nil {
+		return err
+	}
+	exe.Append(executable.JUMP_IF_FALSE)
+	exe.AppendSlice(encoding.DefaultEncoder.Int(endLabel))
+
+	continueLabel := exe.NewLabel()
+	exe.SetContinueLabel(continueLabel)
+	defer exe.ResetBreakLabel()
+
+	if err = whileStatement.block.Generate(context, exe); err != nil {
+		return err
+	}
+
+	exe.SetLabel(continueLabel, exe.GetSize())
+
+	exe.Append(executable.JUMP)
+	exe.AppendSlice(encoding.DefaultEncoder.Int(startLabel))
+
+	exe.SetLabel(endLabel, exe.GetSize())
+
+	return nil
+}
+
 //
 // continue statement
 //
@@ -300,6 +458,13 @@ func (continueStatement *ContinueStatement) Fix(context *Context) errors.Error {
 	return nil
 }
 
+func (continueStatement *ContinueStatement) Generate(context *Context, exe *executable.Executable) errors.Error {
+	exe.AppendSlice(continueStatement.location.Encode())
+	exe.Append(executable.JUMP)
+	exe.AppendSlice(encoding.DefaultEncoder.Int(exe.GetContinueLabel()))
+	return nil
+}
+
 //
 // break statement
 //
@@ -312,6 +477,13 @@ func NewBreakStatement(location *common.Location) *BreakStatement {
 	return &BreakStatement{
 		location: location,
 	}
+}
+
+func (breakStatement *BreakStatement) Generate(context *Context, exe *executable.Executable) errors.Error {
+	exe.AppendSlice(breakStatement.location.Encode())
+	exe.Append(executable.JUMP)
+	exe.AppendSlice(encoding.DefaultEncoder.Int(exe.GetBreakLabel()))
+	return nil
 }
 
 func (breakStatement *BreakStatement) Fix(context *Context) errors.Error {
@@ -349,6 +521,15 @@ func (returnStatement *ReturnStatement) Fix(context *Context) errors.Error {
 	return nil
 }
 
+func (returnStatement *ReturnStatement) Generate(context *Context, exe *executable.Executable) errors.Error {
+	exe.AppendSlice(returnStatement.location.Encode())
+	if err := returnStatement.returnValue.Generate(context, exe); err != nil {
+		return err
+	}
+	exe.Append(executable.RETURN)
+	return nil
+}
+
 //
 // declaration statement
 //
@@ -367,6 +548,10 @@ func NewDeclarationStatement(declaration *Declaration) *DeclarationStatement {
 func (statement *DeclarationStatement) Fix(context *Context) {
 	context.AddVariable(statement.declaration.GetName(), statement.declaration)
 	statement.declaration.Fix(context)
+}
+
+func (statement *DeclarationStatement) Generate(context *Context, exe *executable.Executable) errors.Error {
+	return statement.declaration.Generate(context, exe)
 }
 
 //
@@ -388,4 +573,12 @@ func (statement *ExpressionStatement) Fix(context *Context) errors.Error {
 	var err errors.Error
 	statement.expression, err = statement.expression.Fix(context)
 	return err
+}
+
+func (statement *ExpressionStatement) Generate(context *Context, exe *executable.Executable) errors.Error {
+	if err := statement.expression.Generate(context, exe); err != nil {
+		return err
+	}
+	exe.Append(executable.STACK_POP)
+	return nil
 }

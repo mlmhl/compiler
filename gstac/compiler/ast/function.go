@@ -4,6 +4,7 @@ import (
 	"github.com/mlmhl/compiler/common"
 	"github.com/mlmhl/compiler/gstac/errors"
 	"github.com/mlmhl/compiler/gstac/executable"
+	"github.com/mlmhl/goutil/encoding"
 )
 
 type Parameter struct {
@@ -35,6 +36,12 @@ func (parameter *Parameter) GetLocation() *common.Location {
 	return parameter.location
 }
 
+func (parameter *Parameter) Generate(context *Context, exe *executable.Executable) errors.Error {
+	exe.AppendSlice(encoding.DefaultEncoder.Int(parameter.typ.GetOffset()))
+	exe.AppendSlice(encoding.DefaultEncoder.Int(context.GetSymbolIndex(parameter.identifier.GetName())))
+	return nil
+}
+
 // Use Expression's location as Argument's location.
 type Argument struct {
 	expression Expression
@@ -56,6 +63,10 @@ func (argument *Argument) CastTo(destType Type, context *Context) errors.Error {
 	var err errors.Error
 	argument.expression, err = argument.expression.CastTo(destType, context)
 	return err
+}
+
+func (argument *Argument) Generate(context *Context, exe *executable.Executable) errors.Error {
+	return argument.expression.Generate(context, exe)
 }
 
 type Function struct {
@@ -109,6 +120,21 @@ func (function *Function) Fix(context *Context) errors.Error {
 	return function.block.Fix(context)
 }
 
-func (function *Function) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
+func (function *Function) Generate(context *Context, exe *executable.Executable) errors.Error {
+	// generate return type
+	exe.AppendSlice(encoding.DefaultEncoder.Int(function.returnType.GetOffset()))
 
+	// generate function name
+	exe.AppendSlice(encoding.DefaultEncoder.Int(context.GetSymbolIndex(function.GetName())))
+
+	// generate parameters' count and each parameter
+	exe.AppendSlice(encoding.DefaultEncoder.Int(len(function.parameters)))
+	for _, param := range(function.parameters) {
+		if err := param.Generate(context, exe); err != nil {
+			return err
+		}
+	}
+
+	// generate function body
+	return function.block.Generate(context, exe)
 }

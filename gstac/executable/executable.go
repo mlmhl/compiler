@@ -4,13 +4,20 @@ import (
 	"github.com/mlmhl/compiler/gstac/errors"
 )
 
+// Executable is a collection of a source file's code byte.
 type Executable struct {
 	labelPool      *LabelPool
 	constantPool   *ConstantPool
 	codeByteBuffer *CodeByteBuffer
 
-	isFirstFunc bool
-	isFirstDeclaration bool
+	// size for current object
+	size int
+	// current object is the first one or not
+	isFirst bool
+
+	// Support for continue and break statement
+	currentBreakLabel int
+	currentContinueLabel int
 }
 
 func NewExecutable() *Executable {
@@ -18,8 +25,11 @@ func NewExecutable() *Executable {
 		labelPool:    NewLabelPool(),
 		constantPool: NewConstantPool(),
 
-		isFirstFunc: true,
-		isFirstDeclaration: true,
+		size:    0,
+		isFirst: true,
+
+		currentBreakLabel:    -1,
+		currentContinueLabel: -1,
 	}
 }
 
@@ -36,29 +46,68 @@ func (executable *Executable) AddSymbolList(code []byte) {
 	executable.codeByteBuffer.WriteSlice(code)
 }
 
-// start write a list of some object to file
-func (executable *Executable) BeginList() {
+// Start write a list of some object to file
+func (executable *Executable) StartList() {
 	executable.codeByteBuffer.Write('{')
 }
 
-// Add an element to the file, this method should be called after BeginList,
-// and can't be called an more after EndList.
-func (executable *Executable) AddElement(code []byte) {
-	if executable.isFirstDeclaration {
-		executable.isFirstDeclaration = false
+// StartObject should be invoked before process a new object(Function variable etc.)
+func (executable *Executable) StartObject() {
+	if executable.isFirst {
+		executable.isFirst = false
 	} else {
 		executable.codeByteBuffer.Write(',')
 	}
-	executable.codeByteBuffer.WriteSlice(code)
+}
+
+func (executable *Executable) Append(b byte) {
+	executable.codeByteBuffer.Write(b)
+	executable.size += 1
+}
+
+func (executable *Executable) AppendSlice(segment []byte) {
+	executable.codeByteBuffer.WriteSlice(segment)
+	executable.size += len(segment)
+}
+
+func (executable *Executable) GetSize() int {
+	return executable.size
+}
+
+func (executable *Executable) SetContinueLabel(label int) {
+	executable.currentContinueLabel = label
+}
+
+func (executable *Executable) GetContinueLabel() int {
+	return executable.currentContinueLabel
+}
+
+func (executable *Executable) ResetContinueLabel() {
+	executable.currentContinueLabel = -1
+}
+
+func (executable *Executable) SetBreakLabel(label int) {
+	executable.currentBreakLabel = label
+}
+
+func (executable *Executable) GetBreakLabel() int {
+	return executable.currentBreakLabel
+}
+
+func (executable *Executable) ResetBreakLabel() {
+	executable.currentBreakLabel = -1
+}
+
+// Can't add new code segment of the same object after EndObject invoked
+func (executable *Executable) EndObject() {
+	// reset current object's size back to zero
+	executable.size = 0
 }
 
 // End write a list of some object to file
 func (executable *Executable) EndList() {
 	executable.codeByteBuffer.Write('}')
-}
-
-func (executable *Executable) AddGlobalCode(code []byte) {
-	executable.codeByteBuffer.WriteSlice(code)
+	executable.isFirst = true
 }
 
 func (executable *Executable) NewLabel() int {

@@ -16,7 +16,7 @@ import (
 type Expression interface {
 	Fix(context *Context) (Expression, errors.Error)
 	CastTo(destType Type, context *Context) (Expression, errors.Error)
-	Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error)
+	Generate(context *Context, exe *executable.Executable) errors.Error
 
 	getType(context *Context) (Type, errors.Error)
 	getLocation() *common.Location
@@ -43,9 +43,9 @@ func (expression *baseExpression) CastTo(destType Type, context *Context) (Expre
 	return typeCast(srcType, destType, expression.this)
 }
 
-func (expression *baseExpression) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
+func (expression *baseExpression) Generate(context *Context, exe *executable.Executable) errors.Error {
 	// NO-OP
-	return nil, nil
+	return nil
 }
 
 func (expression *baseExpression) getType(context *Context) (Type, errors.Error) {
@@ -63,7 +63,7 @@ type valueExpression interface {
 
 	// return according operation's code byte
 	// Normally return the constant in executable.code
-	operatorCode() byte
+	getOperatorCode() byte
 
 	// return the value's code byte
 	valueEncode(exe *executable.Executable) []byte
@@ -75,14 +75,14 @@ type baseValueExpression struct {
 	location *common.Location
 }
 
-func (expression *baseValueExpression) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
-	buffer := []byte{}
+func (expression *baseValueExpression) Generate(context *Context, exe *executable.Executable) errors.Error {
 	valueExpression := expression.this.(valueExpression)
 
-	buffer = append(buffer, expression.location.Encode()...)
-	buffer = append(buffer, valueExpression.operatorCode())
-	buffer = append(buffer, valueExpression.valueEncode(exe)...)
-	return buffer, nil
+	exe.AppendSlice(expression.location.Encode())
+	exe.Append(valueExpression.getOperatorCode())
+	exe.AppendSlice(valueExpression.valueEncode(exe))
+
+	return nil
 }
 
 // Default implement for all value expressions. Just store the
@@ -309,28 +309,28 @@ func (expression *ArrayLiteralExpression) CastTo(destType Type, context *Context
 
 // Generate code byte for each array element expression
 // and generate array's size into ArrayLiteralExpression's code byte.
-func (expression *ArrayLiteralExpression) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
-	var buf []byte
-	var buffer []byte
+func (expression *ArrayLiteralExpression) Generate(context *Context, exe *executable.Executable) errors.Error {
 	var err errors.Error
+
+	// Generate expression's location
+	exe.AppendSlice(expression.location.Encode())
 
 	// Generate code byte of array elements
 	for _, subExpr := range expression.values {
-		buf, err = subExpr.Generate(context, exe)
+		err = subExpr.Generate(context, exe)
 		if err != nil {
-			return buffer, err
+			return err
 		}
-		buffer = append(buffer, buf...)
 	}
 
 	// Generate code byte of ArrayLiteralExpression
 
-	buffer = append(buffer, expression.location.Encode()...)
+	exe.AppendSlice(expression.location.Encode())
 	// Generate is called after CastTo, so typ is already set to the correct value
-	buffer = append(buffer, executable.GetOperatorCode(
+	exe.Append(executable.GetOperatorCode(
 		executable.NEW_ARRAY_LITERAL_BOOL, expression.typ.GetOffset()))
 
-	return buffer, nil
+	return nil
 }
 
 // If typ is not set, getType will return a nil, but this doesn't matter,
@@ -360,15 +360,13 @@ func NewIdentifierExpression(identifier *Identifier) *IdentifierExpression {
 }
 
 func (expression *IdentifierExpression) Generate(context *Context,
-	exe *executable.Executable) ([]byte, errors.Error) {
-	buffer := []byte{}
+	exe *executable.Executable) errors.Error {
+	exe.AppendSlice(expression.getLocation().Encode())
+	exe.Append(executable.VARIABLE_REFERENCE)
+	exe.AppendSlice(encoding.DefaultEncoder.Int(
+		context.GetSymbolIndex(expression.identifier.GetName())))
 
-	buffer = append(buffer, expression.getLocation().Encode()...)
-	buffer = append(buffer, executable.VARIABLE_REFERENCE)
-	buffer = append(buffer, encoding.DefaultEncoder.Int(
-		context.GetSymbolIndex(expression.identifier.GetName()))...)
-
-	return buffer, nil
+	return nil
 }
 
 func (expression *IdentifierExpression) getType(context *Context) (Type, errors.Error) {
@@ -521,78 +519,40 @@ func (expression *baseAssignExpression) Fix(context *Context) (Expression, error
 }
 
 func (expression *baseAssignExpression) Generate(context *Context,
-	exe *executable.Executable) ([]byte, errors.Error) {
-	var (
-		code []byte
-		err  errors.Error
-	)
+	exe *executable.Executable) errors.Error {
+	var err errors.Error
 
-	buffer := []byte{}
+	// Generate expression's location
+	exe.AppendSlice(expression.getLocation().Encode())
+
 	expr := expression.this.(assignExpressionInterface)
 
 	// put left operand's code if needed
 	if expr.isLeftNeedPush() {
-		code, err = expression.left.Generate(context, exe)
+		err = expression.left.Generate(context, exe)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		buffer = append(buffer, code...)
 	}
 
 	// put right operand's code
-	code, err = expression.operand.Generate(context, exe)
+	err = expression.operand.Generate(context, exe)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	buffer = append(buffer, code...)
 
 	// write this assign expression
-	buffer = append(buffer, expression.getLocation().Encode()...)
+	exe.AppendSlice(expression.getLocation().Encode())
 	typ, err := expression.getType(context)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	buffer = append(buffer, expr.getOperatorCode(typ))
+	exe.Append(expr.getOperatorCode(typ))
 
 	// support for "a=b=c"
-	if !context.IsGlobal() {
-		buffer = append(buffer, executable.STACK_TOP_DUPLICATE)
-	}
-	buffer = append(buffer)
+	exe.Append(executable.STACK_TOP_DUPLICATE)
 
-	code, err = expression.popToLeftValue(context, exe)
-	if err != nil {
-		return nil, err
-	}
-	buffer = append(buffer, code...)
-
-	return buffer, nil
-}
-
-// Pop stack top value into a left value
-func (expression *baseAssignExpression) popToLeftValue(context *Context,
-	exe *executable.Executable) ([]byte, errors.Error) {
-	buffer := []byte{}
-	buffer = append(buffer, expression.getLocation().Encode()...)
-
-	var (
-		code []byte
-		err  errors.Error
-	)
-
-	switch expr := expression.left.(type) {
-	case *IdentifierExpression:
-		code, err = popToIdentifier(expr, context, exe)
-	case *IndexExpression:
-		code, err = popToArrayIndex(expr, context, exe)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-	buffer = append(buffer, code...)
-
-	return buffer, nil
+	return popToLeftValue(expression.left, context, exe)
 }
 
 func (expression *baseAssignExpression) getType(context *Context) (Type, errors.Error) {
@@ -671,33 +631,28 @@ func (expression *baseBinaryExpression) CastTo(destType Type, context *Context) 
 	return typeCast(srcType, destType, expression)
 }
 
-func (expression *baseBinaryExpression) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
-	buffer := []byte{}
-
+func (expression *baseBinaryExpression) Generate(context *Context, exe *executable.Executable) errors.Error {
 	var (
 		typ  Type
-		code []byte
 		err  errors.Error
 	)
 
-	if code, err = expression.left.Generate(context, exe); err != nil {
-		return nil, err
+	exe.AppendSlice(expression.getLocation().Encode())
+	if err = expression.left.Generate(context, exe); err != nil {
+		return err
 	}
-	buffer = append(buffer, code...)
-
-	if code, err = expression.right.Generate(context, exe); err != nil {
-		return nil, err
+	if err = expression.right.Generate(context, exe); err != nil {
+		return err
 	}
-	buffer = append(buffer, code...)
 
 	// Generate the operator
 	if typ, err = expression.this.getType(context); err != nil {
-		return nil, err
+		return err
 	} else {
-		buffer = append(buffer, expression.this.(binaryExpression).getOperatorCode(typ))
+		exe.Append(expression.this.(binaryExpression).getOperatorCode(typ))
 	}
 
-	return buffer, nil
+	return nil
 }
 
 func (expression *baseBinaryExpression) getType(context *Context) (Type, errors.Error) {
@@ -1384,8 +1339,28 @@ func (expression *LogicalOrExpression) execute(left, right interface{},
 	}
 }
 
-func (expression *LogicalOrExpression) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
+func (expression *LogicalOrExpression) Generate(context *Context, exe *executable.Executable) errors.Error {
+	var err errors.Error
 
+	exe.AppendSlice(expression.getLocation().Encode())
+
+	if err = expression.left.Generate(context, exe); err != nil {
+		return err
+	}
+
+	label := exe.NewLabel()
+	exe.Append(executable.STACK_TOP_DUPLICATE)
+	jumpStatementCodeByte(executable.JUMP_IF_TRUE, label, exe)
+
+	if err = expression.right.Generate(context, exe); err != nil {
+		return err
+	}
+
+	exe.Append(executable.LOGICAL_OR)
+
+	exe.SetLabel(label, exe.GetSize())
+
+	return nil
 }
 
 type LogicalAndExpression struct {
@@ -1414,6 +1389,35 @@ func (expression *LogicalAndExpression) execute(left, right interface{},
 		return nil, errors.NewInvalidOperationError("LOGICAL_AND", location,
 			reflect.TypeOf(left).Name(), reflect.TypeOf(right).Name())
 	}
+}
+
+func (expression *LogicalAndExpression) Generate(context *Context, exe *executable.Executable) errors.Error {
+	var err errors.Error
+
+	exe.AppendSlice(expression.getLocation().Encode())
+
+	if err = expression.left.Generate(context, exe); err != nil {
+		return err
+	}
+
+	// Use two level jump to support 'if statement jump'.
+	// If left == false, first jump to the beginning of 'then condition',
+	// and then jump to the beginning of 'else condition'. So we need to
+	// duplicate the stack top value.
+	label := exe.NewLabel()
+	exe.Append(executable.STACK_TOP_DUPLICATE)
+	jumpStatementCodeByte(executable.JUMP_IF_FALSE, label, exe)
+
+	if err = expression.right.Generate(context, exe); err != nil {
+		return err
+	}
+
+	exe.Append(executable.LOGICAL_AND)
+
+	// use code byte offset as address
+	exe.SetLabel(label, exe.GetSize())
+
+	return nil
 }
 
 type unaryExpression struct {
@@ -1463,12 +1467,28 @@ func (expression *LogicalNotExpression) Fix(context *Context) (Expression, error
 	return expression, nil
 }
 
+func (expression *LogicalNotExpression) Generate(context *Context, exe *executable.Executable) errors.Error {
+	exe.AppendSlice(expression.location.Encode())
+
+	if err := expression.operand.Generate(context, exe); err != nil {
+		return err
+	}
+
+	exe.Append(executable.LOGICAL_NOT)
+
+	return nil
+}
+
 func (expression *LogicalNotExpression) getType(context *Context) (Type, errors.Error) {
 	return BOOL_TYPE, nil
 }
 
 func (expression *LogicalNotExpression) getLocation() *common.Location {
 	return expression.location
+}
+
+func (expression *LogicalNotExpression) getOperatorCode(typ Type) byte {
+	return executable.LOGICAL_NOT
 }
 
 type MinusExpression struct {
@@ -1510,6 +1530,22 @@ func (expression *MinusExpression) Fix(context *Context) (Expression, errors.Err
 	}
 
 	return expression, nil
+}
+
+func (expression *MinusExpression) Generate(context *Context, exe *executable.Executable) errors.Error {
+	exe.AppendSlice(expression.location.Encode())
+
+	if err := expression.operand.Generate(context, exe); err != nil {
+		return err
+	}
+
+	if typ, err := expression.getType(context); err != nil {
+		return err
+	} else {
+		exe.Append(executable.GetOperatorCode(executable.MINUS_INT, typ.GetOffset()-1))
+	}
+
+	return nil
 }
 
 func (expression *MinusExpression) getType(context *Context) (Type, errors.Error) {
@@ -1561,6 +1597,19 @@ func (expression *IncrementExpression) Fix(context *Context) (Expression, errors
 	return expression, nil
 }
 
+func (expression *IncrementExpression) Generate(context *Context, exe *executable.Executable) errors.Error {
+	exe.AppendSlice(expression.location.Encode())
+	if err := expression.operand.Generate(context, exe); err != nil {
+		return err
+	}
+	// Should increment the value first, and then duplicated it.
+	exe.Append(executable.INCREMENT)
+	if !context.IsGlobal() {
+		exe.Append(executable.STACK_TOP_DUPLICATE)
+	}
+	return popToLeftValue(expression.operand, context, exe)
+}
+
 func (expression *IncrementExpression) getType(context *Context) (Type, errors.Error) {
 	return expression.operand.getType(context)
 }
@@ -1608,6 +1657,19 @@ func (expression *DecrementExpression) Fix(context *Context) (Expression, errors
 	}
 
 	return expression, nil
+}
+
+func (expression *DecrementExpression) Generate(context *Context, exe *executable.Executable) errors.Error {
+	exe.AppendSlice(expression.location.Encode())
+	if err := expression.operand.Generate(context, exe); err != nil {
+		return err
+	}
+	// Should increment the value first, and then duplicated it.
+	exe.Append(executable.DECREMENT)
+	if !context.IsGlobal() {
+		exe.Append(executable.STACK_TOP_DUPLICATE)
+	}
+	return popToLeftValue(expression.operand, context, exe)
 }
 
 func (expression *DecrementExpression) getType(context *Context) (Type, errors.Error) {
@@ -1668,6 +1730,22 @@ func (expression *FunctionCallExpression) Fix(context *Context) (Expression, err
 	}
 
 	return expression, nil
+}
+
+func (expression *FunctionCallExpression) Generate(context *Context, exe *executable.Executable) errors.Error {
+	exe.AppendSlice(expression.getLocation().Encode())
+
+	for _, arg := range(expression.arguments) {
+		if err := arg.Generate(context, exe); err != nil {
+			return err
+		}
+	}
+
+	// Argument count needn't to save, as we can know it from function's definition.
+	exe.Append(executable.FUNCTION_INVOKE)
+	exe.AppendSlice(encoding.DefaultEncoder.Int(context.GetSymbolIndex(expression.identifier.GetName())))
+
+	return nil
 }
 
 func (expression *FunctionCallExpression) getType(context *Context) (Type, errors.Error) {
@@ -1734,6 +1812,23 @@ func (expression *IndexExpression) Fix(context *Context) (Expression, errors.Err
 	return expression, nil
 }
 
+func (expression *IndexExpression) Generate(context *Context, exe *executable.Executable) errors.Error {
+	exe.AppendSlice(expression.getLocation().Encode())
+	if err := expression.array.Generate(context, exe); err != nil {
+		return err
+	}
+	if err := expression.index.Generate(context, exe); err != nil {
+		return err
+	}
+
+	if typ, err := expression.getType(context); err != nil {
+		return err
+	} else {
+		exe.Append(executable.GetOperatorCode(executable.ARRAY_INDEX_BOOL, typ.GetOffset()))
+		return nil
+	}
+}
+
 func (expression *IndexExpression) getType(context *Context) (Type, errors.Error) {
 	typ, err := expression.array.getType(context)
 	if err != nil {
@@ -1746,8 +1841,22 @@ func (expression *IndexExpression) getLocation() *common.Location {
 	return expression.array.getLocation()
 }
 
+type castExpressionInterface interface {
+	getOperatorCode() byte
+}
+
 type castExpression struct {
+	baseExpression
 	operand Expression
+}
+
+func (expression *castExpression) Generate(context *Context, exe *executable.Executable) errors.Error {
+	exe.AppendSlice(expression.getLocation().Encode())
+	if err := expression.operand.Generate(context, exe); err != nil {
+		return err
+	}
+	exe.Append(expression.this.(castExpressionInterface).getOperatorCode())
+	return nil
 }
 
 func (expression *castExpression) getLocation() *common.Location {
@@ -1755,7 +1864,6 @@ func (expression *castExpression) getLocation() *common.Location {
 }
 
 type IntegerToFloatCastExpression struct {
-	baseExpression
 	castExpression
 }
 
@@ -1773,8 +1881,11 @@ func (expression *IntegerToFloatCastExpression) getType(context *Context) (Type,
 	return FLOAT_TYPE, nil
 }
 
+func (expression *IntegerToFloatCastExpression) getOperatorCode() byte {
+	return executable.INT_TO_FLOAT
+}
+
 type FloatToIntegerCastExpression struct {
-	baseExpression
 	castExpression
 }
 
@@ -1792,8 +1903,11 @@ func (expression *FloatToIntegerCastExpression) getType(context *Context) (Type,
 	return INTEGER_TYPE, nil
 }
 
+func (expression *FloatToIntegerCastExpression) getOperatorCode() byte {
+	return executable.FLOAT_TO_INT
+}
+
 type NullToStringCastExpression struct {
-	baseExpression
 	castExpression
 }
 
@@ -1811,24 +1925,33 @@ func (expression *NullToStringCastExpression) getType(context *Context) (Type, e
 	return STRING_TYPE, nil
 }
 
+func (expression *NullToStringCastExpression) getOperatorCode() byte {
+	return executable.NULL_TO_STRING
+}
+
 type BoolToStringCastExpression struct {
 	castExpression
 }
 
 func NewBoolToStringCastExpression(operand Expression) *NullToStringCastExpression {
-	return &NullToStringCastExpression{
+	expression := &NullToStringCastExpression{
 		castExpression: castExpression{
 			operand: operand,
 		},
 	}
+	expression.castExpression.this = expression
+	return expression
 }
 
 func (expression *BoolToStringCastExpression) getType() (Type, errors.Error) {
 	return STRING_TYPE, nil
 }
 
+func (expression *BoolToStringCastExpression) getOperatorCode() byte {
+	return executable.BOOL_TO_STRING
+}
+
 type IntegerToStringCastExpression struct {
-	baseExpression
 	castExpression
 }
 
@@ -1846,8 +1969,11 @@ func (expression *IntegerToStringCastExpression) getType(context *Context) (Type
 	return STRING_TYPE, nil
 }
 
+func (expression *IntegerToStringCastExpression) getOperatorCode() byte {
+	return executable.INT_TO_STRING
+}
+
 type FloatToStringCastExpression struct {
-	baseExpression
 	castExpression
 }
 
@@ -1863,6 +1989,10 @@ func NewFloatToStringCastExpression(operand Expression) *FloatToStringCastExpres
 
 func (expression *FloatToStringCastExpression) getType(context *Context) (Type, errors.Error) {
 	return STRING_TYPE, nil
+}
+
+func (expression *FloatToStringCastExpression) getOperatorCode() byte {
+	return executable.FLOAT_TO_STRING
 }
 
 type ArrayCreationExpression struct {
@@ -1912,6 +2042,21 @@ func (expression *ArrayCreationExpression) Fix(context *Context) (Expression, er
 	}
 
 	return expression, nil
+}
+
+func (expression *ArrayCreationExpression) Generate(context *Context, exe *executable.Executable) errors.Error {
+	exe.AppendSlice(expression.location.Encode())
+
+	for _, dim := range(expression.dimensions) {
+		if err := dim.Generate(context, exe); err != nil {
+			return nil
+		}
+	}
+
+	exe.Append(executable.ARRAY_CREATE)
+	exe.AppendSlice(encoding.DefaultEncoder.Int(len(expression.dimensions)))
+
+	return nil
 }
 
 func (expression *ArrayCreationExpression) getType(context *Context) (Type, errors.Error) {
@@ -2002,12 +2147,28 @@ func stringTypeCast(destType Type, operand Expression) (Expression, errors.Error
 	return nil, errors.NewTypeCastError(STRING_TYPE.GetName(), destType.GetName(), operand.getLocation())
 }
 
+// Pop stack top value into a left value
+func popToLeftValue(left Expression, context *Context,
+exe *executable.Executable) errors.Error {
+
+	var err errors.Error
+
+	switch expr := left.(type) {
+	case *IdentifierExpression:
+		err = popToIdentifier(expr, context, exe)
+	case *IndexExpression:
+		err = popToArrayIndex(expr, context, exe)
+	}
+
+	return err
+}
+
 // Pop stack top value into a variable
 func popToIdentifier(expression *IdentifierExpression, context *Context,
-	exe *executable.Executable) ([]byte, errors.Error) {
+	exe *executable.Executable) errors.Error {
 	typ, err := expression.getType(context)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	var start byte
 	if context.IsGlobal() {
@@ -2016,32 +2177,30 @@ func popToIdentifier(expression *IdentifierExpression, context *Context,
 		start = executable.POP_STACK_BOOL
 	}
 	// Int is the first supported type for pop stack operation
-	return []byte{append(executable.GetOperatorCode(start, typ.GetOffset()-1))}
+	exe.Append(executable.GetOperatorCode(start, typ.GetOffset()-1))
+	return nil
 }
 
 // Pop stack top value into array index
 func popToArrayIndex(expression *IndexExpression, context *Context,
-	exe *executable.Executable) ([]byte, errors.Error) {
-	buffer := []byte{}
+	exe *executable.Executable) errors.Error {
+	var err errors.Error
 
-	var (
-		code []byte
-		err  errors.Error
-	)
-
-	if code, err = expression.array.Generate(context, exe); err != nil {
-		return nil, err
-	} else {
-		buffer = append(buffer, code...)
+	if err = expression.array.Generate(context, exe); err != nil {
+		return err
 	}
 
-	if code, err = expression.index.Generate(context, exe); err != nil {
-		return nil, err
-	} else {
-		buffer = append(buffer, code...)
+	if err = expression.index.Generate(context, exe); err != nil {
+		return err
 	}
 
-	buffer = append(buffer, executable.POP_ARRAY_BOOL)
+	exe.Append(executable.POP_ARRAY_BOOL)
 
-	return buffer, nil
+	return nil
+}
+
+// Generate  ajump statement's code byte
+func jumpStatementCodeByte(code byte, label int, exe *executable.Executable) {
+	exe.Append(code)
+	exe.AppendSlice(encoding.DefaultEncoder.Int(label))
 }

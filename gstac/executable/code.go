@@ -73,6 +73,18 @@ const (
 	LESS_THAN_OR_EQUAL_INT
 	LESS_THAN_OR_EQUAL_FLOAT
 
+	// Logical operation
+	LOGICAL_OR
+	LOGICAL_AND
+	LOGICAL_NOT
+
+	// Minus operation
+	MINUS_INT
+	MINUS_FLOAT
+
+	INCREMENT
+	DECREMENT
+
 	// Support for continuous assignment like 'a=b=c'
 	STACK_TOP_DUPLICATE
 
@@ -93,6 +105,35 @@ const (
 	POP_ARRAY_INT
 	POP_ARRAY_FLOAT
 	POP_ARRAY_OBJECT
+
+	// Remove stack top's value
+	STACK_POP
+
+	// Support for jump statement
+	JUMP
+	JUMP_IF_TRUE
+	JUMP_IF_FALSE
+
+	FUNCTION_INVOKE
+
+	// Array index operation
+	ARRAY_INDEX_BOOL
+	ARRAY_INDEX_INT
+	ARRAY_INDEX_FLOAT
+	ARRAY_INDEX_OBJECT // string or object
+	ARRAY_INDEX_NULL
+
+	// Type cast
+	INT_TO_FLOAT
+	FLOAT_TO_INT
+	NULL_TO_STRING
+	BOOL_TO_STRING
+	INT_TO_STRING
+	FLOAT_TO_STRING
+
+	ARRAY_CREATE
+
+	RETURN
 )
 
 func GetOperatorCode(start byte, offset int) byte {

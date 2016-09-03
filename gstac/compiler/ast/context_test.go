@@ -31,7 +31,7 @@ func TestSymbolLIst(t *testing.T) {
 	targetCodeByte:= "{Hello:0,World:1,Compiler:2,parser:3,analyzer:4}"
 	codeByte := string(symbolList.Encode())
 	{
-		symbols := strings.Split(codeByte, ",")
+		symbols := strings.Split(strings.Trim(codeByte, "{}"), ",")
 		newSymbols := make([]string, len(symbols))
 		for _, symbol := range(symbols) {
 			switch {
@@ -47,7 +47,7 @@ func TestSymbolLIst(t *testing.T) {
 				newSymbols[4] = symbol
 			}
 		}
-		codeByte = strings.Join(newSymbols, ",")
+		codeByte = "{" + strings.Join(newSymbols, ",") + "}"
 	}
 
 	if targetCodeByte != codeByte {

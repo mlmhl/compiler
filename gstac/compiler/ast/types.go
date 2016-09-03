@@ -336,7 +336,7 @@ func (typ *DeriveType) GetBaseType() Type {
 	return typ.base
 }
 
-func (typ *DeriveType) GetOffset() {
+func (typ *DeriveType) GetOffset() int {
 	return 3
 }
 
@@ -405,21 +405,17 @@ func (declaration *Declaration) Fix(context *Context) {
 	declaration.initializer.CastTo(declaration.typ, context)
 }
 
-func (declaration *Declaration) Generate(context *Context, exe *executable.Executable) ([]byte, errors.Error) {
-	buffer := []byte{}
-
+func (declaration *Declaration) Generate(context *Context, exe *executable.Executable) errors.Error {
 	// generate location
-	buffer = append(buffer, declaration.location.Encode()...)
-
-	// generate variable name's index in symbol list
-	buffer = append(buffer, encoding.DefaultEncoder.Int(context.GetSymbolIndex(
-		declaration.identifier.GetName())))
+	exe.AppendSlice(declaration.location.Encode())
 
 	// generate initializer
-	expressionCode, err := declaration.initializer.Generate(context)
-	if err != nil {
-		return nil, err
+	if err := declaration.initializer.Generate(context, exe); err != nil {
+		return err
 	}
-	buffer = append(buffer, expressionCode...)
-	return buffer, nil
+
+	// generate symbol index
+	exe.AppendSlice(encoding.DefaultEncoder.Int(context.GetSymbolIndex(declaration.identifier.GetName())))
+
+	return nil
 }

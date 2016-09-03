@@ -63,35 +63,26 @@ func (compiler *Compiler) generate(fileName string) {
 	executable.AddSymbolList(compiler.globalContext.GetSymbolList().Encode())
 
 	// write functions to file
-	executable.BeginList()
+	executable.StartList()
 	for _, function := range(compiler.globalContext.GetFunctionList()) {
-		code, err := function.Generate(compiler.globalContext, executable)
+		err := function.Generate(compiler.globalContext, executable)
 		if err != nil {
 			compiler.logger.CompileError(err)
 		}
-		executable.AddElement(code)
-	}
-	executable.EndList()
-
-	// write variable declaration to file
-	executable.BeginList()
-	for _, declaration := range(compiler.globalContext.GetDeclarationList()) {
-		code, err := declaration.Generate(compiler.globalContext, executable)
-		if err != nil {
-			compiler.logger.CompileError(err)
-		}
-		executable.AddElement(code)
 	}
 	executable.EndList()
 
 	// write global code to file
+	executable.StartList()
+	executable.StartObject()
 	for _, statement := range(compiler.statements) {
-		code, err := statement.Generate(compiler.globalContext, executable)
+		err := statement.Generate(compiler.globalContext, executable)
 		if err != nil {
 			compiler.logger.CompileError(err)
 		}
-		executable.AddGlobalCode(code)
 	}
+	executable.EndObject()
+	executable.EndList()
 
 	executable.Close()
 }
